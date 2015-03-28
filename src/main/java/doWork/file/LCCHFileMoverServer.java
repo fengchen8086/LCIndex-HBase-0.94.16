@@ -12,15 +12,22 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import doWork.LCCIndexConstant;
+import doWork.jobs.CommitJobQueue;
+import doWork.jobs.CommitJobQueue.CommitJob;
+import doWork.jobs.CompleteCompactionJobQueue;
+import doWork.jobs.CompleteCompactionJobQueue.CompleteCompactionJob;
 
 public class LCCHFileMoverServer implements Runnable {
 
   private int serverPort;
   private int bufferLength = 0;
   private AtomicInteger runningThreads = new AtomicInteger(0);
+  private long totalSendSize = 0;
+  private int totalSendFileNum = 0;
 
   public LCCHFileMoverServer(Configuration conf) throws IOException {
     serverPort =
@@ -42,8 +49,9 @@ public class LCCHFileMoverServer implements Runnable {
         // should change to nio, otherwise will block here!
         // may be connecting localhost is possible
         Socket s = ss.accept();
-        System.out.println("winter LCCHFileMoverServer running thread number: "
-            + runningThreads.incrementAndGet());
+        // System.out.println("winter LCCHFileMoverServer running thread number: "
+        // + runningThreads.incrementAndGet());
+        runningThreads.incrementAndGet();
         new ServerThread(s, bufferLength).start();
       }
       while (runningThreads.intValue() > 0) {
@@ -119,7 +127,6 @@ public class LCCHFileMoverServer implements Runnable {
       int lenInfo = 0;
       lenInfo = sockIn.read(bufName);
       if (lenInfo == -1 && prevMessage != null) {
-        
         if (prevMessage.startsWith(LCCIndexConstant.DELETE_HEAD_MSG)) {
           return prevMessage.substring(LCCIndexConstant.DELETE_HEAD_MSG.length());
         } else if (prevMessage.startsWith(LCCIndexConstant.REQUIRE_HEAD_MSG)) {
@@ -144,29 +151,17 @@ public class LCCHFileMoverServer implements Runnable {
       }
     }
 
-    private void transferFile(String targetName) throws IOException {
-      File file = new File(targetName);
-      // server check local, and say no if not exists
-      if (!file.exists()) {
-        sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.getBytes());
-        System.out.println("winter LCCHFileMoverServer can not fild file: " + targetName);
-        return;
-      }
-      // File exists!
-      if (!file.isFile()) {
-        sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.getBytes());
-        throw new IOException(
-            "winter LCCHFileMoverServer found file but not a file (may be a dir?) : " + targetName);
-      }
-      sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_FOUND_MSG.getBytes());
-      sockOut.flush();
+    private void transferFile(File file) throws IOException {
       FileInputStream fis = new FileInputStream(file); // read local file
       // send file to client
       int len = 0;
-      readShortMessage(); // read message just wait for ack from client
-      System.out.println("winter LCCHFileMoverServer write file length: "
-          + String.valueOf(file.length()));
-      sockOut.write(Bytes.toBytes(String.valueOf(file.length())));
+      long fileLong = file.length();
+      totalSendSize += fileLong;
+      ++totalSendFileNum;
+      System.out.println("winter LCCHFileMoverServer send a new file: " + file.getAbsolutePath()
+          + ", length: " + String.valueOf(fileLong) + ", now the totalSendSize is " + totalSendSize
+          + " for " + totalSendFileNum + " files");
+      sockOut.write(Bytes.toBytes(String.valueOf(fileLong)));
       readShortMessage();
       while (true) {
         len = fis.read(buffer);
@@ -188,7 +183,46 @@ public class LCCHFileMoverServer implements Runnable {
       if (LCCIndexConstant.DELETE_HEAD_MSG.equals(msg)) {
         deleteFile(targetName);
       } else if (LCCIndexConstant.REQUIRE_HEAD_MSG.equals(msg)) {
-        transferFile(targetName);
+        // server check local, and say no if not exists
+        if (!new File(targetName).exists()) {
+          sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.getBytes());
+          String hdfsPath = readShortMessage();
+          CommitJob commitJob = CommitJobQueue.getInstance().findJobByDestPath(new Path(hdfsPath));
+          boolean processNow = false;
+          if (commitJob != null) { // in commit
+            sockOut.write(Bytes.toBytes(LCCIndexConstant.FILE_IN_COMMIT_QUEUE_MSG));
+            processNow = Boolean.valueOf(readShortMessage());
+            CommitJobQueue.getInstance().promoteJob(commitJob, processNow);
+          } else { // not in commit
+            CompleteCompactionJob completeCompactJob =
+                CompleteCompactionJobQueue.getInstance().findJobByDestPath(new Path(hdfsPath));
+            if (completeCompactJob != null) { // in complete
+              sockOut.write(Bytes.toBytes(LCCIndexConstant.FILE_IN_COMPLETECOMPACTION_QUEUE_MSG));
+              processNow = Boolean.valueOf(readShortMessage());
+              CommitJobQueue.getInstance().promoteJob(completeCompactJob, processNow);
+            } else { // surely not on this server
+              sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.getBytes());
+              // System.out.println("winter LCCHFileMoverServer can not fild file: " + targetName);
+              return;
+            }
+          }
+          if (processNow) {
+            transferFile(new File(targetName));
+          }
+        } else { // file exists, just return
+          // File exists!
+          File file = new File(targetName);
+          if (!file.isFile()) {
+            sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.getBytes());
+            throw new IOException(
+                "winter LCCHFileMoverServer found file but not a file (may be a dir?) : "
+                    + targetName);
+          }
+          sockOut.write(LCCIndexConstant.LCC_LOCAL_FILE_FOUND_MSG.getBytes());
+          // last operation is write, read and discard
+          readShortMessage();
+          transferFile(file);
+        }
       }
     }
   }

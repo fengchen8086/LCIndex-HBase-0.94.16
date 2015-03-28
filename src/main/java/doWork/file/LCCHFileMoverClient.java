@@ -11,11 +11,16 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Stack;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import doWork.LCCIndexConstant;
 
 public class LCCHFileMoverClient {
+
+  public enum RemoteStatus {
+    NOT_EXIST, IN_QUEUE_WAITING, SUCCESS, UNKNOWN;
+  }
 
   private static int shortBufferLen = 1024;
   private Socket sock = null;
@@ -62,80 +67,89 @@ public class LCCHFileMoverClient {
     return new String(bufName, 0, lenInfo);
   }
 
-  public boolean containsFileAndCopy(String fileName) throws IOException {
-    boolean ret = innerContainsFileAndCopy(fileName, 1);
+  public RemoteStatus copyRemoteFile(String fileName, Path hdfsPath, boolean processNow)
+      throws IOException {
+    RemoteStatus ret = innerContainsFileAndCopy(fileName, hdfsPath, processNow);
     deinit();
     return ret;
   }
 
-  public boolean deleteRemoteFile(String dirName) throws IOException {
+  public RemoteStatus deleteRemoteFile(String dirName) throws IOException {
     sockOut.write(Bytes.toBytes(LCCIndexConstant.DELETE_HEAD_MSG));
     String msg = readShortMessage();
     sockOut.write(Bytes.toBytes(dirName));
     msg = readShortMessage();
-    boolean ret = false;
+    RemoteStatus ret = RemoteStatus.UNKNOWN;
     if (LCCIndexConstant.DELETE_SUCCESS_MSG.equals(msg)) {
-      ret = true;
+      ret = RemoteStatus.SUCCESS;
     } else if (LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.equals(msg)) {
-      ret = false;
+      ret = RemoteStatus.NOT_EXIST;
     } else {
       System.out.println("winter msg unknow for delete file: " + dirName + ", msg: " + msg);
-      ret = false;
     }
     deinit();
     return ret;
   }
 
-  private boolean innerContainsFileAndCopy(String fileName, int times) throws IOException {
+  private RemoteStatus innerContainsFileAndCopy(String realName, Path hdfsPath, boolean processNow)
+      throws IOException {
     sockOut.write(Bytes.toBytes(LCCIndexConstant.REQUIRE_HEAD_MSG));
     String msg = readShortMessage();
-    sockOut.write(Bytes.toBytes(fileName));
+    sockOut.write(Bytes.toBytes(realName));
     msg = readShortMessage();
     if (LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.equals(msg)) {
-      // not found
-      System.out.println("winter LCCHFileMoverClient local file " + fileName
-          + " not found on server: " + ip);
-      return false;
+      sockOut.write(Bytes.toBytes(hdfsPath.toString()));
+      msg = readShortMessage();
+      if (LCCIndexConstant.LCC_LOCAL_FILE_NOT_FOUND_MSG.equals(msg)) {
+        return RemoteStatus.NOT_EXIST;
+      } else {
+        System.out.println("winter LCCHFileMoverClient file " + realName
+            + " found on server queues: " + msg + ", ip: " + ip);
+        sockOut.write(Bytes.toBytes(String.valueOf(processNow)));
+        if (processNow) {
+          try {
+            return transferFile(realName);
+          } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            throw new IOException("NoSuchAlgorithmException in transferFile, file: " + realName, e);
+          } catch (IOException e) {
+            e.printStackTrace();
+            throw new IOException("IOException in transferFile, file: " + realName, e);
+          }
+        } else {
+          return RemoteStatus.IN_QUEUE_WAITING;
+        }
+      }
     } else if (LCCIndexConstant.LCC_LOCAL_FILE_FOUND_MSG.equals(msg)) {
       // found
-      System.out.println("winter LCCHFileMoverClient local file " + fileName + " found on server: "
-          + ip + ", the " + times + " times");
-      if (new File(fileName).exists()) {
-        // throw new IOException("winter LCCHFileMoverClient local file should not exists: "
-        // + fileName);
-        System.out
-            .println("winter LCCHFileMoverClient local file exists locally, why call remote? "
-                + new Exception());
-        new Exception().printStackTrace();
-        return true;
-      }
+      System.out.println("winter LCCHFileMoverClient file " + realName + " found on server: " + ip);
       try {
-        return transferFile(fileName);
+        sockOut.write(Bytes.toBytes(LCCIndexConstant.NO_MEANING_MSG));
+        return transferFile(realName);
       } catch (NoSuchAlgorithmException e) {
         e.printStackTrace();
-        throw new IOException("NoSuchAlgorithmException in transferFile, file: " + fileName, e);
+        throw new IOException("NoSuchAlgorithmException in transferFile, file: " + realName, e);
       } catch (IOException e) {
         e.printStackTrace();
-        throw new IOException("IOException in transferFile, file: " + fileName, e);
+        throw new IOException("IOException in transferFile, file: " + realName, e);
       }
     } else {
-      if (msg == null) System.out.println("winter LCCHFileMoverClient msg is null");
-      else System.out.println("msg LCCHFileMoverClient not understood: " + msg);
-      return false;
+      System.out.println("msg LCCHFileMoverClient not understood: " + msg);
+      return RemoteStatus.UNKNOWN;
     }
   }
 
-  private boolean transferFile(String fileName) throws IOException, NoSuchAlgorithmException {
+  private RemoteStatus transferFile(String fileName) throws IOException, NoSuchAlgorithmException {
     File file = new File(fileName);
     mkParentDirs(file);
     file.createNewFile();
     FileOutputStream fos = new FileOutputStream(file);
-    sockOut.write(fileName.getBytes()); // write again to tell the server ready to recv data
     // write into local file!
     String msg = readShortMessage();
-    System.out.println("LCCHFileMoverClient file length: " + msg + " of file: " + fileName);
+    // System.out.println("LCCHFileMoverClient file length: " + msg + " of file: " + fileName);
     long totalLength = Long.valueOf(msg);
-    sockOut.write(msg.getBytes()); // write again to tell the server ready to recv data
+    // write again to tell the server, client is ready to recv data
+    sockOut.write(Bytes.toBytes(LCCIndexConstant.NO_MEANING_MSG));
     int receivedCount = 0;
     while (true) {
       int len = sockIn.read(buffer);
@@ -148,7 +162,7 @@ public class LCCHFileMoverClient {
       }
     }
     fos.close();
-    return true;
+    return RemoteStatus.SUCCESS;
   }
 
   public static void mkParentDirs(File file) {

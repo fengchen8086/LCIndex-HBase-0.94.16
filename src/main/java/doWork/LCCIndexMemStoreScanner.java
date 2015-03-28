@@ -37,7 +37,12 @@ public class LCCIndexMemStoreScanner extends NonLazyKeyValueScanner {
     }
     this.lccIndexQualifier.put(target, lccIndexQualifier.get(target));
     // this.lccIndexQualifier = lccIndexQualifier;
+    long start = System.currentTimeMillis();
     init(scanner);
+    System.out.println("winter LCCIndexMemStoreScanner cost "
+        + (System.currentTimeMillis() - start) / 1000.0
+        + " seconds to build lcc memstore scanner from memstore, the size of this scanner is: "
+        + dataList.size());
   }
 
   private void init(KeyValueScanner scanner) {

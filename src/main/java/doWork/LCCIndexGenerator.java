@@ -51,6 +51,12 @@ public class LCCIndexGenerator {
     }
   }
 
+  public void processKeyValueQueue(Queue<KeyValue> queue) throws IOException {
+    while (!queue.isEmpty()) {
+      processKeyValue(queue.poll());
+    }
+  }
+
   private void updateLCRangeStat(KeyValue kv) throws IOException {
     if (mWinterIsLCCIndexColumn(kv.getQualifier())) {
       for (LCStatInfo stat : statList) {
@@ -179,9 +185,6 @@ public class LCCIndexGenerator {
   public KeyValue[] generatedSortedKeyValueArray() {
     while (!lccQueue.isEmpty()) {
       mWinterProcessOneKeyValue(lccQueue.poll());
-    }
-    if (lccResults.size() == 0) {
-      return null;
     }
     KeyValue[] array = lccResults.toArray(new KeyValue[lccResults.size()]);
     Arrays.sort(array, KeyValue.COMPARATOR);

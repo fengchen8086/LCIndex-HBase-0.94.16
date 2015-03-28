@@ -24,12 +24,14 @@ public class LCCIndexConstant {
   public static final String CF_FAMILY_PREFIX_STR = "if_";
   public static final byte[] CF_FAMILY_PREFIX_BYTES = Bytes.toBytes(CF_FAMILY_PREFIX_STR);
   public static final String TABLE_DESC_FORMAT_STR = "LC_DATA_FORMAT";
-  public static final String LCC_TABLE_DESC_RANGE_STR = "LC_DATA_RANGE";
+  public static final String LC_TABLE_DESC_RANGE_STR = "LC_DATA_RANGE";
+  public static final String ROWKEY_RANGE = "ROWKEY_RANGE";
   public static final String LCC_TABLE_DESC_RANGE_DELIMITER = ",,";
   public static final String LC_STAT_FILE_SUFFIX = "-stat";
 
   // file path
   public static final String INDEX_DIR_NAME = ".lccindex";
+  public static final String INDEX_TMP_DIR_NAME = ".lctmp";
   public static final String INDEX_DIR_NAME_DEBUG = ".debuglcc";
   public static final String SCAN_WITH_LCCINDEX = "scan.with.lccindex";
   public static final String LCINDEX_LOCAL_DIR = "lcindex.local.dir";
@@ -45,13 +47,17 @@ public class LCCIndexConstant {
   public static final long DEFAULT_SLEEP_TIME_WHEN_QUEUE_EMPTY = 10 * 1000;
   public static final String LCC_MOVER_BUFFER_LEN = "lcindex.mover.buffer.length";
   public static final int DEFAULT_LCC_MOVER_BUFFER_LEN = 1024 * 1024;
-  public static final String LCC_LOCAL_FILE_FOUND_MSG = "FILE_FOUND_YES";
-  public static final String LCC_LOCAL_FILE_NOT_FOUND_MSG = "FILE_FOUND_NO";
+  public static final String LCC_LOCAL_FILE_FOUND_MSG = "FILE_FOUND_MSG";
+  public static final String LCC_LOCAL_FILE_NOT_FOUND_MSG = "FILE_NOT_FOUND_MSG";
+  public static final String LCC_LOCAL_FILE_NOT_FILE_MSG = "FILE_NOT_A_FILE_MSG";
   public static final String TCP_BYE_MSG = "SEE_YOU_COFFEY";
   public static final String DELETE_HEAD_MSG = "DELETE_HEAD_MSG";
   public static final String REQUIRE_HEAD_MSG = "REQUIRE_HEAD_MSG";
   public static final String DELETE_SUCCESS_MSG = "DELETE_FILE_SUCCESS_MSG";
   public static final String NO_MEANING_MSG = "PLACE_HOLDER_MSG";
+  public static final String FILE_IN_COMMIT_QUEUE_MSG = "FILE_IN_COMMIT_QUEUE_MSG";
+  public static final String FILE_IN_COMPLETECOMPACTION_QUEUE_MSG =
+      "FILE_IN_COMPLETECOMPACTION_QUEUE_MSG";
 
   // format
   public static final String FORMAT_INT_STR = "%012d";
@@ -63,21 +69,25 @@ public class LCCIndexConstant {
   public static String paddedStringInt(int i) {
     return StringUtils.leftPad(String.format(FORMAT_INT_STR, i), LCCINDEX_PREFIX_ROWKEY_LENGTH,
       FORMAT_ZERO_STR);
+    // return String.valueOf(i);
   }
 
   public static String paddedStringLong(long d) {
     return StringUtils.leftPad(String.format(FORMAT_INT_STR, d), LCCINDEX_PREFIX_ROWKEY_LENGTH,
       FORMAT_ZERO_STR);
+    // return String.valueOf(d);
   }
 
   public static String paddedStringShort(short d) {
     return StringUtils.leftPad(String.format(FORMAT_INT_STR, d), LCCINDEX_PREFIX_ROWKEY_LENGTH,
       FORMAT_ZERO_STR);
+    // return String.valueOf(b);
   }
 
   public static String paddedStringDouble(double d) {
     return StringUtils.leftPad(String.format(FORMAT_DOUBLE_STR, d), LCCINDEX_PREFIX_ROWKEY_LENGTH,
       FORMAT_ZERO_STR);
+    // return String.valueOf(d);
   }
 
   // public static String paddedStringString(String s) {
@@ -201,17 +211,7 @@ public class LCCIndexConstant {
     cfs.add(new UNSHEED_CF_INFO("p", DataType.STRING, true));
     cfs.add(new UNSHEED_CF_INFO("cl", DataType.STRING, false));
     cfs.add(new UNSHEED_CF_INFO("sh", DataType.INT, false));
-    cfs.add(new UNSHEED_CF_INFO("ct", DataType.STRING, false));
-    
-//    cfs.add(new UNSHEED_CF_INFO("orderKey", DataType.LONG, false));
-//    cfs.add(new UNSHEED_CF_INFO("custKey", DataType.LONG, false));
-//    cfs.add(new UNSHEED_CF_INFO("status", DataType.STRING, false));
-//    cfs.add(new UNSHEED_CF_INFO("totalPrice", DataType.DOUBLE, true));
-//    cfs.add(new UNSHEED_CF_INFO("date", DataType.LONG, true));
-//    cfs.add(new UNSHEED_CF_INFO("priority", DataType.STRING, true));
-//    cfs.add(new UNSHEED_CF_INFO("clerk", DataType.STRING, false));
-//    cfs.add(new UNSHEED_CF_INFO("shipPriority", DataType.INT, false));
-//    cfs.add(new UNSHEED_CF_INFO("comment", DataType.STRING, false));
+    cfs.add(new UNSHEED_CF_INFO("cm", DataType.STRING, false));
   }
 
   public static String mWinterToPrint(KeyValue kv) {
