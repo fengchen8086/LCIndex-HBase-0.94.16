@@ -15,23 +15,23 @@ import org.apache.hadoop.hbase.util.Bytes;
  *
  */
 public class IndexPut {
-	private Map<byte[],Put> puts;
-	
-	public IndexPut(){
-		puts=new TreeMap<byte[],Put>(Bytes.BYTES_COMPARATOR);
+	private Map<byte[], Put> puts;
+
+	public IndexPut() {
+		puts = new TreeMap<byte[], Put>(Bytes.BYTES_COMPARATOR);
 	}
-	
-	public void addPut(byte[] index,Put put){
+
+	public void addPut(byte[] index, Put put) {
 		puts.put(index, put);
 	}
-	
-	public Map<byte[],Put>  getPuts(){
+
+	public Map<byte[], Put> getPuts() {
 		return puts;
 	}
-	
-	public void setWAL(Durability wal){
-    for(Put put:puts.values()){
-      put.setDurability(wal);
-    }
-  }
+
+	public void setWAL(Durability wal) {
+		for (Put put : puts.values()) {
+			put.setDurability(wal);
+		}
+	}
 }

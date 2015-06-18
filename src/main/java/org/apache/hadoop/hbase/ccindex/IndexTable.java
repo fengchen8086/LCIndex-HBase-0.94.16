@@ -55,8 +55,11 @@ public class IndexTable {
   private final IndexTableDescriptor indexDesc;
   private IndexChooser chooser;
   private HTable mainTable;
+  private HTable mainCCTTable;
 
   public Map<byte[], HTable> indexTableMaps = null;
+  public Map<byte[], HTable> cctTableMaps = null;
+  public static byte[] CCT_FIX = Bytes.toBytes("_cct");
 
   // column info of this table, mainly contains each column's type
   private Map<byte[], DataType> columnTypeMap = null;
@@ -66,7 +69,8 @@ public class IndexTable {
   private int maxScanners = 0;
   private static int DEFAULT_MAX_SCANNERS = 10;
 
-  // max get threads for a scan, it will be used when SecIndex or ImpSecIndex if chose to scan
+  // max get threads for a scan, it will be used when SecIndex or ImpSecIndex
+  // if chose to scan
   // and index table doesn't contain all result columns
   private int maxGetsPerScanner = 0;
   private static int DEFAULT_MAX_GETS_PER_SCANNER = 10;
@@ -125,13 +129,18 @@ public class IndexTable {
     this.scannerCaching = conf.getInt("hbase.client.scanner.caching", 1000);
 
     this.mainTable = new HTable(conf, tableName);
+    this.mainCCTTable = new HTable(conf, Bytes.add(tableName, CCT_FIX));
     this.indexDesc = new IndexTableDescriptor(mainTable.getTableDescriptor());
     this.indexTableMaps = new TreeMap<byte[], HTable>(Bytes.BYTES_COMPARATOR);
+    this.cctTableMaps = new TreeMap<byte[], HTable>(Bytes.BYTES_COMPARATOR);
 
     indexTableMaps.put(IndexConstants.KEY, mainTable);
+    cctTableMaps.put(Bytes.add(IndexConstants.KEY, CCT_FIX), mainCCTTable);
     if (indexDesc.getIndexedColumns() != null && indexDesc.getIndexedColumns().length != 0) {
       for (IndexSpecification spec : indexDesc.getIndexSpecifications()) {
         indexTableMaps.put(spec.getIndexColumn(), new HTable(conf, spec.getIndexTableName()));
+        cctTableMaps.put(Bytes.add(spec.getIndexColumn(), CCT_FIX),
+          new HTable(conf, Bytes.add(spec.getIndexTableName(), CCT_FIX)));
       }
     }
     String tempInfo = mainTable.getTableDescriptor().getValue("DATA_FORMAT");
@@ -174,12 +183,13 @@ public class IndexTable {
       }
       Result result = this.get(get);
       if (!result.isEmpty()) {
-        IndexDelete indexdelete =
-            IndexUtils.createIndexDelete(indexDesc, new Delete(put.getRow()), result);
+        IndexDelete indexdelete = IndexUtils.createIndexDelete(indexDesc, new Delete(put.getRow()),
+          result);
         indexdelete.setWAL(put.getDurability());
         doIndexDelete(Arrays.asList(indexdelete));
       }
     }
+    // here to modify !!!
     IndexPut indexput = IndexUtils.createIndexPut(indexDesc, put);
     indexput.setWAL(put.getDurability());
     doIndexPut(Arrays.asList(indexput));
@@ -187,10 +197,20 @@ public class IndexTable {
 
   private void doIndexPut(final List<IndexPut> puts) throws IOException {
     HTable temptable = null;
+    HTable tempCCT = null;
+
     for (IndexPut put : puts) {
       for (Map.Entry<byte[], Put> entry : put.getPuts().entrySet()) {
         temptable = indexTableMaps.get(entry.getKey());
         temptable.put(entry.getValue());
+        Put cctPut = IndexUtils.parseCCTPut(indexDesc, entry.getValue());
+        if (cctPut != null) {
+          // System.out.println("winter indextable name: " + Bytes.toString(entry.getKey())
+          // + ", values: " + entry.getValue() + ", cct value: " + cctPut);
+          tempCCT = cctTableMaps.get(Bytes.add(entry.getKey(), CCT_FIX));
+          tempCCT.put(cctPut);
+        }
+        // something to do here
       }
     }
   }
@@ -201,7 +221,7 @@ public class IndexTable {
    * For a table which already has indexes, only deleting row is supported currently. Make sure that
    * you only delete the whole row for a table with indexes.
    * @param delete The object that specifies what to delete.
-   * @throws IOException-if a remote or network exception occurs.
+   * @throws IOException -if a remote or network exception occurs.
    */
   public void delete(final Delete delete) throws IOException {
     IndexDelete indexdelete = null;
@@ -344,7 +364,8 @@ public class IndexTable {
           CompareOp.EQUAL, null, CompareOp.NO_OP));
     }
 
-    // int index = chooser.whichToScan(list.toArray(new Range[0]), (byte[][]) null);
+    // int index = chooser.whichToScan(list.toArray(new Range[0]),
+    // (byte[][]) null);
     int index = 0;
     if (list.size() > 1 && c3_end > 60000.0) {
       index = 1;
@@ -402,17 +423,15 @@ public class IndexTable {
       if (Bytes.equals(list.get(index).getColumn(), Bytes.toBytes("f:c3"))) {
         scan.setStopRow(list.get(index).getEndValue());
         if (list.size() > 1) {
-          filter =
-              new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c5"), CompareOp.EQUAL,
-                  Bytes.toBytes(c5_equal));
+          filter = new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c5"),
+              CompareOp.EQUAL, Bytes.toBytes(c5_equal));
         }
       } else {
         scan.setStartRow(list.get(index).getStartValue());
         scan.setStopRow(Bytes.add(list.get(index).getStartValue(), IndexConstants.MAX_ROW_KEY));
         if (list.size() > 1) {
-          filter =
-              new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"), CompareOp.LESS,
-                  Bytes.toBytes(c3_end));
+          filter = new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"),
+              CompareOp.LESS, Bytes.toBytes(c3_end));
         }
       }
 
@@ -520,17 +539,15 @@ public class IndexTable {
       if (Bytes.equals(list.get(index).getColumn(), Bytes.toBytes("f:c3"))) {
         scan.setStopRow(list.get(index).getEndValue());
         if (list.size() > 1) {
-          filter =
-              new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c5"), CompareOp.EQUAL,
-                  Bytes.toBytes(c5_equal));
+          filter = new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c5"),
+              CompareOp.EQUAL, Bytes.toBytes(c5_equal));
         }
       } else {
         scan.setStartRow(list.get(index).getStartValue());
         scan.setStopRow(Bytes.add(list.get(index).getStartValue(), IndexConstants.MAX_ROW_KEY));
         if (list.size() > 1) {
-          filter =
-              new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"), CompareOp.LESS,
-                  Bytes.toBytes(c3_end));
+          filter = new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"),
+              CompareOp.LESS, Bytes.toBytes(c3_end));
         }
       }
 
@@ -638,9 +655,8 @@ public class IndexTable {
       scan.setStopRow(Bytes.add(
         Bytes.add(list.get(index).getStartValue(), IndexConstants.MIN_ROW_KEY), stop));
 
-      filter =
-          new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"), CompareOp.LESS,
-              Bytes.toBytes(c3_end));
+      filter = new SingleColumnValueFilter(Bytes.toBytes("f"), Bytes.toBytes("c3"), CompareOp.LESS,
+          Bytes.toBytes(c3_end));
 
       HTable table = this.indexTableMaps.get(list.get(index).getColumn());
       long startTime = System.currentTimeMillis();
@@ -690,9 +706,8 @@ public class IndexTable {
   }
 
   public byte[] parseIndexRowKey(byte[] indexKey) {
-    int length =
-        Integer.valueOf(Bytes.toString(Bytes.tail(indexKey, IndexConstants.LASTPART_LENGTH)))
-            .intValue();
+    int length = Integer.valueOf(
+      Bytes.toString(Bytes.tail(indexKey, IndexConstants.LASTPART_LENGTH))).intValue();
     // get row key of main data table
     byte[] result = new byte[indexKey.length - IndexConstants.LASTPART_LENGTH - length];
     for (int i = 0; i < result.length; i++) {
@@ -893,7 +908,8 @@ public class IndexTable {
     // if this index table contains all results that needed
     boolean containAll = true;
 
-    // Contains not range of index column(include key column), choose main data table to scan
+    // Contains not range of index column(include key column), choose main
+    // data table to scan
     if (flag <= -1) {
       LOG.debug("Not index is used, scan the whole main data table!");
 
@@ -974,7 +990,8 @@ public class IndexTable {
       LOG.debug("Start parallel scan threads! MaxScanThreads=" + maxScanners
           + ", StartedScanThreads=" + (distance > maxScanners ? maxScanners : distance));
 
-      // If there are too many regions, each thread will scan several regions
+      // If there are too many regions, each thread will scan several
+      // regions
       if (distance > maxScanners) {
         float mean = 1.0f * distance / maxScanners;
 
@@ -1049,25 +1066,23 @@ public class IndexTable {
         byte[][] fq = KeyValue.parseColumn(range[i].getColumn());
 
         if (range[i].getEndTs() != -1 || range[i].getStartTs() != -1) {
-          TimeRangeFilter t =
-              new TimeRangeFilter(fq[0], fq[1], range[i].getStartTs(), range[i].getEndTs());
+          TimeRangeFilter t = new TimeRangeFilter(fq[0], fq[1], range[i].getStartTs(),
+              range[i].getEndTs());
           t.setFilterIfMissing(range[i].isFilterIfMissing());
           t.setLatestVersionOnly(range[i].isLatestVersionOnly());
           ftlist.add(t);
         }
 
         if (range[i].getStartValue() != null) {
-          SingleColumnValueFilter f =
-              new SingleColumnValueFilter(fq[0], fq[1], range[i].getStartType(),
-                  range[i].getStartValue());
+          SingleColumnValueFilter f = new SingleColumnValueFilter(fq[0], fq[1],
+              range[i].getStartType(), range[i].getStartValue());
           f.setFilterIfMissing(range[i].isFilterIfMissing());
           f.setLatestVersionOnly(range[i].isLatestVersionOnly());
           ftlist.add(f);
         }
         if (range[i].getEndValue() != null) {
-          SingleColumnValueFilter f =
-              new SingleColumnValueFilter(fq[0], fq[1], range[i].getEndType(),
-                  range[i].getEndValue());
+          SingleColumnValueFilter f = new SingleColumnValueFilter(fq[0], fq[1],
+              range[i].getEndType(), range[i].getEndValue());
           f.setFilterIfMissing(range[i].isFilterIfMissing());
           f.setLatestVersionOnly(range[i].isLatestVersionOnly());
           ftlist.add(f);
@@ -1091,24 +1106,22 @@ public class IndexTable {
             if (map.containsKey(fq[0])
                 && (map.get(fq[0]) == null || map.get(fq[0]).contains(fq[1]))) {
               if (range[i].getEndTs() != -1 || range[i].getStartTs() != -1) {
-                TimeRangeFilter t =
-                    new TimeRangeFilter(fq[0], fq[1], range[i].getStartTs(), range[i].getEndTs());
+                TimeRangeFilter t = new TimeRangeFilter(fq[0], fq[1], range[i].getStartTs(),
+                    range[i].getEndTs());
                 t.setFilterIfMissing(range[i].isFilterIfMissing());
                 t.setLatestVersionOnly(range[i].isLatestVersionOnly());
                 ftlist.add(t);
               }
               if (range[i].getStartValue() != null) {
-                SingleColumnValueFilter f =
-                    new SingleColumnValueFilter(fq[0], fq[1], range[i].getStartType(),
-                        range[i].getStartValue());
+                SingleColumnValueFilter f = new SingleColumnValueFilter(fq[0], fq[1],
+                    range[i].getStartType(), range[i].getStartValue());
                 f.setFilterIfMissing(range[i].isFilterIfMissing());
                 f.setLatestVersionOnly(range[i].isLatestVersionOnly());
                 templist.add(f);
               }
               if (range[i].getEndValue() != null) {
-                SingleColumnValueFilter f =
-                    new SingleColumnValueFilter(fq[0], fq[1], range[i].getEndType(),
-                        range[i].getEndValue());
+                SingleColumnValueFilter f = new SingleColumnValueFilter(fq[0], fq[1],
+                    range[i].getEndType(), range[i].getEndValue());
                 f.setFilterIfMissing(range[i].isFilterIfMissing());
                 f.setLatestVersionOnly(range[i].isLatestVersionOnly());
                 templist.add(f);
@@ -1228,6 +1241,9 @@ public class IndexTable {
     for (HTable table : indexTableMaps.values()) {
       table.setWriteBufferSize(writeBufferSize);
     }
+    for (HTable table : cctTableMaps.values()) {
+      table.setWriteBufferSize(writeBufferSize);
+    }
   }
 
   /**
@@ -1279,6 +1295,9 @@ public class IndexTable {
     for (HTable table : indexTableMaps.values()) {
       table.setAutoFlush(autoFlush);
     }
+    for (HTable table : cctTableMaps.values()) {
+      table.setAutoFlush(autoFlush);
+    }
   }
 
   public byte[] getTableName() {
@@ -1308,6 +1327,9 @@ public class IndexTable {
     for (HTable table : indexTableMaps.values()) {
       table.flushCommits();
     }
+    for (HTable table : cctTableMaps.values()) {
+      table.flushCommits();
+    }
   }
 
   public void close() throws IOException {
@@ -1317,7 +1339,7 @@ public class IndexTable {
   /**
    * Set result buffer size for an IndexResultScanner created later.
    * @param bufferSize
-   * @throws IllegalArgumentException-buffer size isn't greater than 0
+   * @throws IllegalArgumentException -buffer size isn't greater than 0
    */
   public void setResultBufferSize(int bufferSize) {
     if (bufferSize <= 0) {
@@ -1333,7 +1355,7 @@ public class IndexTable {
   /**
    * Set load factor for an IndexResultScanner created later.
    * @param factor
-   * @throws IllegalArgumentException-buffer load fact isn't greater than 0
+   * @throws IllegalArgumentException -buffer load fact isn't greater than 0
    */
   public void setLoadFactor(float factor) {
     if (factor <= 0.0f) {

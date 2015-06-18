@@ -1,21 +1,13 @@
 /**
- * Copyright 2010 The Apache Software Foundation
- *
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010 The Apache Software Foundation Licensed to the Apache Software Foundation (ASF)
+ * under one or more contributor license agreements. See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership. The ASF licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in
+ * writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+ * language governing permissions and limitations under the License.
  */
 package org.apache.hadoop.hbase.regionserver;
 
@@ -50,8 +42,7 @@ public class TestCompactSelection extends TestCase {
 
   private Configuration conf;
   private Store store;
-  private static final String DIR=
-    TEST_UTIL.getDataTestDir("TestCompactSelection").toString();
+  private static final String DIR = TEST_UTIL.getDataTestDir("TestCompactSelection").toString();
   private static Path TEST_FILE;
 
   private static final int minFiles = 3;
@@ -59,7 +50,6 @@ public class TestCompactSelection extends TestCase {
 
   private static final long minSize = 10;
   private static final long maxSize = 1000;
-
 
   @Override
   public void setUp() throws Exception {
@@ -72,9 +62,9 @@ public class TestCompactSelection extends TestCase {
     this.conf.setLong("hbase.hstore.compaction.max.size", maxSize);
     this.conf.setFloat("hbase.hstore.compaction.ratio", 1.0F);
 
-    //Setting up a Store
+    // Setting up a Store
     Path basedir = new Path(DIR);
-    Path logdir = new Path(DIR+"/logs");
+    Path logdir = new Path(DIR + "/logs");
     Path oldLogDir = new Path(basedir, HConstants.HREGION_OLDLOGDIR_NAME);
     HColumnDescriptor hcd = new HColumnDescriptor(Bytes.toBytes("family"));
     FileSystem fs = FileSystem.get(conf);
@@ -102,12 +92,11 @@ public class TestCompactSelection extends TestCase {
     boolean isRef = false;
 
     MockStoreFile(long length, boolean isRef) throws IOException {
-      super(TEST_UTIL.getTestFileSystem(), TEST_FILE,
-            TEST_UTIL.getConfiguration(),
-            new CacheConfig(TEST_UTIL.getConfiguration()), BloomType.NONE,
-            NoOpDataBlockEncoder.INSTANCE);
+      super(TEST_UTIL.getTestFileSystem(), TEST_FILE, TEST_UTIL.getConfiguration(),
+          new CacheConfig(TEST_UTIL.getConfiguration()), BloomType.NONE,
+          NoOpDataBlockEncoder.INSTANCE);
       this.length = length;
-      this.isRef  = isRef;
+      this.isRef = isRef;
     }
 
     void setLength(long newLen) {
@@ -120,7 +109,7 @@ public class TestCompactSelection extends TestCase {
     }
 
     @Override
-    boolean isReference() {
+    public boolean isReference() {
       return this.isRef;
     }
 
@@ -136,12 +125,11 @@ public class TestCompactSelection extends TestCase {
     }
   }
 
-  List<StoreFile> sfCreate(long ... sizes) throws IOException {
+  List<StoreFile> sfCreate(long... sizes) throws IOException {
     return sfCreate(false, sizes);
   }
 
-  List<StoreFile> sfCreate(boolean isReference, long ... sizes)
-  throws IOException {
+  List<StoreFile> sfCreate(boolean isReference, long... sizes) throws IOException {
     List<StoreFile> ret = Lists.newArrayList();
     for (long i : sizes) {
       ret.add(new MockStoreFile(i, isReference));
@@ -151,20 +139,18 @@ public class TestCompactSelection extends TestCase {
 
   long[] getSizes(List<StoreFile> sfList) {
     long[] aNums = new long[sfList.size()];
-    for (int i=0; i <sfList.size(); ++i) {
+    for (int i = 0; i < sfList.size(); ++i) {
       aNums[i] = sfList.get(i).getReader().length();
     }
     return aNums;
   }
-  
-  void compactEquals(List<StoreFile> candidates, long ... expected) 
-  throws IOException {
+
+  void compactEquals(List<StoreFile> candidates, long... expected) throws IOException {
     compactEquals(candidates, false, expected);
   }
 
-  void compactEquals(List<StoreFile> candidates, boolean forcemajor, 
-      long ... expected)
-  throws IOException {
+  void compactEquals(List<StoreFile> candidates, boolean forcemajor, long... expected)
+      throws IOException {
     store.forceMajor = forcemajor;
     List<StoreFile> actual = store.compactSelection(candidates).getFilesToCompact();
     store.forceMajor = false;
@@ -173,40 +159,39 @@ public class TestCompactSelection extends TestCase {
 
   public void testCompactionRatio() throws IOException {
     /*
-     * NOTE: these tests are specific to describe the implementation of the
-     * current compaction algorithm.  Developed to ensure that refactoring
-     * doesn't implicitly alter this.
+     * NOTE: these tests are specific to describe the implementation of the current compaction
+     * algorithm. Developed to ensure that refactoring doesn't implicitly alter this.
      */
     long tooBig = maxSize + 1;
 
     // default case. preserve user ratio on size
-    compactEquals(sfCreate(100,50,23,12,12), 23, 12, 12);
+    compactEquals(sfCreate(100, 50, 23, 12, 12), 23, 12, 12);
     // less than compact threshold = don't compact
-    compactEquals(sfCreate(100,50,25,12,12) /* empty */);
+    compactEquals(sfCreate(100, 50, 25, 12, 12) /* empty */);
     // greater than compact size = skip those
     compactEquals(sfCreate(tooBig, tooBig, 700, 700, 700), 700, 700, 700);
     // big size + threshold
-    compactEquals(sfCreate(tooBig, tooBig, 700,700) /* empty */);
+    compactEquals(sfCreate(tooBig, tooBig, 700, 700) /* empty */);
     // small files = don't care about ratio
-    compactEquals(sfCreate(8,3,1), 8,3,1);
-    /* TODO: add sorting + unit test back in when HBASE-2856 is fixed 
-    // sort first so you don't include huge file the tail end
-    // happens with HFileOutputFormat bulk migration
-    compactEquals(sfCreate(100,50,23,12,12, 500), 23, 12, 12);
+    compactEquals(sfCreate(8, 3, 1), 8, 3, 1);
+    /*
+     * TODO: add sorting + unit test back in when HBASE-2856 is fixed // sort first so you don't
+     * include huge file the tail end // happens with HFileOutputFormat bulk migration
+     * compactEquals(sfCreate(100,50,23,12,12, 500), 23, 12, 12);
      */
     // don't exceed max file compact threshold
-    assertEquals(maxFiles,
-        store.compactSelection(sfCreate(7,6,5,4,3,2,1)).getFilesToCompact().size());
-    // note:  file selection starts with largest to smallest.
+    assertEquals(maxFiles, store.compactSelection(sfCreate(7, 6, 5, 4, 3, 2, 1))
+        .getFilesToCompact().size());
+    // note: file selection starts with largest to smallest.
     compactEquals(sfCreate(7, 6, 5, 4, 3, 2, 1), 7, 6, 5, 4, 3);
-    
+
     /* MAJOR COMPACTION */
     // if a major compaction has been forced, then compact everything
-    compactEquals(sfCreate(50,25,12,12), true, 50, 25, 12, 12);
+    compactEquals(sfCreate(50, 25, 12, 12), true, 50, 25, 12, 12);
     // also choose files < threshold on major compaction
-    compactEquals(sfCreate(12,12), true, 12, 12);
+    compactEquals(sfCreate(12, 12), true, 12, 12);
     // even if one of those files is too big
-    compactEquals(sfCreate(tooBig, 12,12), true, tooBig, 12, 12);
+    compactEquals(sfCreate(tooBig, 12, 12), true, tooBig, 12, 12);
     // don't exceed max file compact threshold, even with major compaction
     store.forceMajor = true;
     compactEquals(sfCreate(7, 6, 5, 4, 3, 2, 1), 7, 6, 5, 4, 3);
@@ -215,30 +200,30 @@ public class TestCompactSelection extends TestCase {
     // if we exceed maxCompactSize, downgrade to minor
     // if not, it creates a 'snowball effect' when files >> maxCompactSize:
     // the last file in compaction is the aggregate of all previous compactions
-    compactEquals(sfCreate(100,50,23,12,12), true, 23, 12, 12);
+    compactEquals(sfCreate(100, 50, 23, 12, 12), true, 23, 12, 12);
     conf.setLong(HConstants.MAJOR_COMPACTION_PERIOD, 1);
     conf.setFloat("hbase.hregion.majorcompaction.jitter", 0);
     try {
       // trigger an aged major compaction
-      compactEquals(sfCreate(50,25,12,12), 50, 25, 12, 12);
+      compactEquals(sfCreate(50, 25, 12, 12), 50, 25, 12, 12);
       // major sure exceeding maxCompactSize also downgrades aged minors
-      compactEquals(sfCreate(100,50,23,12,12), 23, 12, 12);
+      compactEquals(sfCreate(100, 50, 23, 12, 12), 23, 12, 12);
     } finally {
-      conf.setLong(HConstants.MAJOR_COMPACTION_PERIOD, 1000*60*60*24);
+      conf.setLong(HConstants.MAJOR_COMPACTION_PERIOD, 1000 * 60 * 60 * 24);
       conf.setFloat("hbase.hregion.majorcompaction.jitter", 0.20F);
     }
 
     /* REFERENCES == file is from a region that was split */
     // treat storefiles that have references like a major compaction
-    compactEquals(sfCreate(true, 100,50,25,12,12), 100, 50, 25, 12, 12);
+    compactEquals(sfCreate(true, 100, 50, 25, 12, 12), 100, 50, 25, 12, 12);
     // reference files shouldn't obey max threshold
-    compactEquals(sfCreate(true, tooBig, 12,12), tooBig, 12, 12);
+    compactEquals(sfCreate(true, tooBig, 12, 12), tooBig, 12, 12);
     // reference files should obey max file compact to avoid OOM
-    assertEquals(maxFiles,
-        store.compactSelection(sfCreate(true, 7,6,5,4,3,2,1)).getFilesToCompact().size());
+    assertEquals(maxFiles, store.compactSelection(sfCreate(true, 7, 6, 5, 4, 3, 2, 1))
+        .getFilesToCompact().size());
     // reference compaction
     compactEquals(sfCreate(true, 7, 6, 5, 4, 3, 2, 1), 5, 4, 3, 2, 1);
-    
+
     // empty case
     compactEquals(new ArrayList<StoreFile>() /* empty */);
     // empty case (because all files are too big)
@@ -247,22 +232,21 @@ public class TestCompactSelection extends TestCase {
 
   public void testOffPeakCompactionRatio() throws IOException {
     /*
-     * NOTE: these tests are specific to describe the implementation of the
-     * current compaction algorithm.  Developed to ensure that refactoring
-     * doesn't implicitly alter this.
+     * NOTE: these tests are specific to describe the implementation of the current compaction
+     * algorithm. Developed to ensure that refactoring doesn't implicitly alter this.
      */
     long tooBig = maxSize + 1;
 
     Calendar calendar = new GregorianCalendar();
     int hourOfDay = calendar.get(Calendar.HOUR_OF_DAY);
     LOG.debug("Hour of day = " + hourOfDay);
-    int hourPlusOne = ((hourOfDay+1+24)%24);
-    int hourMinusOne = ((hourOfDay-1+24)%24);
-    int hourMinusTwo = ((hourOfDay-2+24)%24);
+    int hourPlusOne = ((hourOfDay + 1 + 24) % 24);
+    int hourMinusOne = ((hourOfDay - 1 + 24) % 24);
+    int hourMinusTwo = ((hourOfDay - 2 + 24) % 24);
 
     // check compact selection without peak hour setting
     LOG.debug("Testing compact selection without off-peak settings...");
-    compactEquals(sfCreate(999,50,12,12,1), 12, 12, 1);
+    compactEquals(sfCreate(999, 50, 12, 12, 1), 12, 12, 1);
 
     // set an off-peak compaction threshold
     this.conf.setFloat("hbase.hstore.compaction.ratio.offpeak", 5.0F);
@@ -270,20 +254,19 @@ public class TestCompactSelection extends TestCase {
     // set peak hour to current time and check compact selection
     this.conf.setLong("hbase.offpeak.start.hour", hourMinusOne);
     this.conf.setLong("hbase.offpeak.end.hour", hourPlusOne);
-    LOG.debug("Testing compact selection with off-peak settings (" +
-        hourMinusOne + ", " + hourPlusOne + ")");
-    compactEquals(sfCreate(999,50,12,12, 1), 50, 12, 12, 1);
+    LOG.debug("Testing compact selection with off-peak settings (" + hourMinusOne + ", "
+        + hourPlusOne + ")");
+    compactEquals(sfCreate(999, 50, 12, 12, 1), 50, 12, 12, 1);
 
     // set peak hour outside current selection and check compact selection
     this.conf.setLong("hbase.offpeak.start.hour", hourMinusTwo);
     this.conf.setLong("hbase.offpeak.end.hour", hourMinusOne);
-    LOG.debug("Testing compact selection with off-peak settings (" +
-        hourMinusTwo + ", " + hourMinusOne + ")");
-    compactEquals(sfCreate(999,50,12,12, 1), 12, 12, 1);
+    LOG.debug("Testing compact selection with off-peak settings (" + hourMinusTwo + ", "
+        + hourMinusOne + ")");
+    compactEquals(sfCreate(999, 50, 12, 12, 1), 12, 12, 1);
   }
 
   @org.junit.Rule
   public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
+      new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
-

@@ -171,6 +171,12 @@ import com.google.common.collect.Lists;
 
 import doWork.file.LCCHFileMoverClient;
 import doWork.file.LCCHFileMoverServer;
+import doWork.jobs.ArchiveJobQueue;
+import doWork.jobs.CommitJobQueue;
+import doWork.jobs.CompleteCompactionJobQueue;
+import doWork.jobs.FlushJobQueue;
+import doWork.jobs.CompactJobQueue;
+import doWork.jobs.RemoteJobQueue;
 
 /**
  * HRegionServer makes a set of HRegions available to clients. It checks in with the HMaster. There
@@ -483,6 +489,12 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler, Ru
     lccMoverServer = new LCCHFileMoverServer(conf);
     moverThread = new Thread(lccMoverServer);
     moverThread.start();
+    FlushJobQueue.getInstance().startThread();
+    CommitJobQueue.getInstance().startThread();
+    CompactJobQueue.getInstance().startThread();
+    RemoteJobQueue.getInstance().startThread();
+    CompleteCompactionJobQueue.getInstance().startThread();
+    ArchiveJobQueue.getInstance().startThread();
   }
 
   /** Handle all the snapshot requests to this server */
@@ -805,8 +817,16 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler, Ru
     lccMoverServer.setToClose();
     try {
       // copyerThread.join();
+      FlushJobQueue.getInstance().stopAndJoin();
+      CommitJobQueue.getInstance().stopAndJoin();
+      CompactJobQueue.getInstance().stopAndJoin();
+      RemoteJobQueue.getInstance().stopAndJoin();
+      CompleteCompactionJobQueue.getInstance().stopAndJoin();
+      ArchiveJobQueue.getInstance().stopAndJoin();
+
       LCCHFileMoverClient client = new LCCHFileMoverClient("localhost", getConfiguration());
-      client.containsFileAndCopy("/THIS_IS_A_FILE_SHOULD_NOT_EXISTS");
+      client.copyRemoteFile("/THIS_IS_A_FILE_SHOULD_NOT_EXISTS", new Path(
+          "/THIS_IS_A_FILE_SHOULD_NOT_EXISTS"), false);
       System.out.println("winter now the reigon server is really stopped");
       moverThread.join();
     } catch (InterruptedException e1) {

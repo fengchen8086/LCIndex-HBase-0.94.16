@@ -13,6 +13,10 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hdfs.util.ByteArray;
 
+import doWork.LCCIndexConstant;
+import doWork.LCCIndexDebuggerGiveUP;
+import doWork.LCCIndexGenerator;
+
 /**
  * Singleton class for index maintence logic.
  * @author wanhao
@@ -20,6 +24,33 @@ import org.apache.hadoop.hdfs.util.ByteArray;
 public class IndexUtils {
 
   public static byte[] DELIMITER = new byte[] { '#', '#', '#', '#' };
+
+  private static byte[] columnName(KeyValue kv) {
+    return Bytes.add(kv.getFamily(), Bytes.toBytes(":"), kv.getQualifier());
+  }
+
+  public static Put parseCCTPut(final IndexTableDescriptor indexDesc, final Put rawPut)
+      throws IOException {
+    Put cctPut = new Put(rawPut.getRow());
+    // indexDesc contains "f:x"
+    if (indexDesc.hasIndex()) {
+      for (IndexSpecification indexSpec : indexDesc.getIndexSpecifications()) {
+        if (indexSpec.getIndexType() == IndexType.CCINDEX) { // must be ccindex
+          for (Map.Entry<byte[], List<KeyValue>> entry : rawPut.getFamilyMap().entrySet()) {
+            for (KeyValue kv : entry.getValue()) {
+              if (indexDesc.isIndexColumn(columnName(kv))) {
+                cctPut.add(kv);
+//                System.out.println("winter raw put see inner kv, getFamily: "
+//                    + Bytes.toString(columnName(kv)) + ", value: "
+//                    + LCCIndexConstant.mWinterToPrint(kv));
+              }
+            }
+          }
+        }
+      }
+    }
+    return cctPut;
+  }
 
   public static IndexPut createIndexPut(final IndexTableDescriptor indexDesc, final Put put)
       throws IOException {
@@ -36,7 +67,8 @@ public class IndexUtils {
               for (KeyValue kv : entry.getValue()) {
                 if (Bytes.compareTo(kv.getQualifier(), indexSpec.getQualifier()) != 0) {
                   tempput.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(), kv.getValue());
-                } else if (put.size() == 1) { // contain index column only
+                } else if (put.size() == 1) { // contain index
+                  // column only
                   tempput.add(kv.getFamily(), null, kv.getTimestamp(), kv.getValue());
                 }
               }
@@ -57,11 +89,14 @@ public class IndexUtils {
                 if (colset == null || colset.size() == 0) {
                   for (KeyValue kv : entry.getValue()) {
                     if (Bytes.compareTo(kv.getQualifier(), indexSpec.getQualifier()) != 0) {
-                      System.out.println("winter A");
+                      // System.out.println("winter A");
                       tempput.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(),
                         kv.getValue());
-                    } else if (put.size() == 1) { // contain index column only
-                      System.out.println("winter B");
+                    } else if (put.size() == 1) { // contain
+                      // index
+                      // column
+                      // only
+                      // System.out.println("winter B");
                       tempput.add(kv.getFamily(), null, kv.getTimestamp(), kv.getValue());
                     }
                   }
@@ -69,11 +104,14 @@ public class IndexUtils {
                   for (KeyValue kv : entry.getValue()) {
                     if (colset.contains(kv.getQualifier())) {
                       if (Bytes.compareTo(kv.getQualifier(), indexSpec.getQualifier()) != 0) {
-                        System.out.println("winter C");
+                        // System.out.println("winter C");
                         tempput.add(kv.getFamily(), kv.getQualifier(), kv.getTimestamp(),
                           kv.getValue());
-                      } else if (put.size() == 1) { // contain index column only
-                        System.out.println("winter D");
+                      } else if (put.size() == 1) { // contain
+                        // index
+                        // column
+                        // only
+                        // System.out.println("winter D");
                         tempput.add(kv.getFamily(), null, kv.getTimestamp(), kv.getValue());
                       }
                     }

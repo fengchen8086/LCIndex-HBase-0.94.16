@@ -89,6 +89,8 @@ import com.google.common.collect.Ordering;
 import doTestAid.WinterOptimizer;
 import doWork.LCCIndexConstant;
 import doWork.LCStatInfo;
+import doWork.jobs.RemoteJobQueue;
+import doWork.jobs.RemoteJobQueue.RemoteJob;
 
 /**
  * A Store data file. Stores usually have one or more of these files. They are produced by flushing
@@ -238,7 +240,6 @@ public class StoreFile extends SchemaConfigured {
   // path = /hbase/lcc/xx/f/basename
   // lccIndexHomePath = /hbase/lcc/xx/f/.lccindex
   private Path lccIndexHomePath;
-  private TreeMap<byte[], Path> lccIndexReferencePaths;
   private volatile TreeMap<byte[], Reader> lccIndexReaders;
   private volatile TreeMap<byte[], Reader> lccLocalReaders;
 
@@ -306,7 +307,6 @@ public class StoreFile extends SchemaConfigured {
     }
     // path = /hbase/lcc/xx/f/basename
     // lccIndexHomePath = /hbase/lcc/xx/f/.lccindex
-    lccIndexReferencePaths = new TreeMap<byte[], Path>(Bytes.BYTES_COMPARATOR);
     lccIndexReaders = new TreeMap<byte[], Reader>(Bytes.BYTES_COMPARATOR);
     lccLocalReaders = new TreeMap<byte[], Reader>(Bytes.BYTES_COMPARATOR);
     lccIndexHomePath = mWinterGetIndexHomePathFromPath(path);
@@ -395,7 +395,7 @@ public class StoreFile extends SchemaConfigured {
    * @return True if this is a StoreFile Reference; call after {@link #open()} else may get wrong
    *         answer.
    */
-  boolean isReference() {
+  public boolean isReference() {
     return this.reference != null;
   }
 
@@ -939,8 +939,10 @@ public class StoreFile extends SchemaConfigured {
         Path pathStat =
             new Path(new Path(store.lccLocalHome, Bytes.toString(qualifier)), path.getName()
                 + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-        Compactor.loadRemoteLCCLocalFile(store, lccLocalFilePath);
-        Compactor.loadRemoteLCCLocalFile(store, pathStat);
+        RemoteJob job2 = new RemoteJob(store, lccLocalFilePath, path, false);
+        RemoteJobQueue.getInstance().promoteJob(job2, true);
+        RemoteJob job1 = new RemoteJob(store, pathStat, path, false);
+        RemoteJobQueue.getInstance().promoteJob(job1, false);
         copyFromRemote = true;
       }
       if (store.localfs.exists(lccLocalFilePath)) {
@@ -2215,7 +2217,7 @@ public class StoreFile extends SchemaConfigured {
     TreeMap<byte[], Long> qualifierCount = new TreeMap<byte[], Long>(Bytes.BYTES_COMPARATOR);
     BufferedReader br = null;
     String rangeDesc =
-        store.getHRegion().getTableDesc().getValue(LCCIndexConstant.LCC_TABLE_DESC_RANGE_STR);
+        store.getHRegion().getTableDesc().getValue(LCCIndexConstant.LC_TABLE_DESC_RANGE_STR);
     List<LCStatInfo> statList = LCStatInfo.parseStatString(rangeDesc, includedRange);
     for (Range r : ranges) {
       LCStatInfo targetStat = findStat(r.getQualifier(), statList);
@@ -2225,12 +2227,12 @@ public class StoreFile extends SchemaConfigured {
             new Path(new Path(store.lccLocalHome, Bytes.toString(r.getQualifier())), path.getName()
                 + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
         if (!store.localfs.exists(localStatPath)) {
-          Compactor.loadRemoteLCCLocalFile(store, localStatPath);
-          Compactor
-              .loadRemoteLCCLocalFile(
-                store,
-                new Path(new Path(store.lccLocalHome, Bytes.toString(r.getQualifier())), path
-                    .getName()));
+          RemoteJob job1 = new RemoteJob(store, localStatPath, path, false);
+          RemoteJob job2 =
+              new RemoteJob(store, new Path(new Path(store.lccLocalHome, Bytes.toString(r
+                  .getQualifier())), path.getName()), path, false);
+          RemoteJobQueue.getInstance().promoteJob(job1, true);
+          RemoteJobQueue.getInstance().promoteJob(job2, false);
           if (!store.localfs.exists(localStatPath)) {
             qualifierCount.put(r.getQualifier(), Long.MAX_VALUE);
             continue;

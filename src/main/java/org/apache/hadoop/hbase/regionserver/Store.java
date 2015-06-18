@@ -11,18 +11,18 @@
  */
 package org.apache.hadoop.hbase.regionserver;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InterruptedIOException;
-import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableSet;
+import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 import java.util.SortedSet;
@@ -50,7 +50,6 @@ import org.apache.hadoop.hbase.HBaseFileSystem;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KVComparator;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
@@ -100,8 +99,17 @@ import com.google.common.collect.Lists;
 
 import doTestAid.WinterOptimizer;
 import doWork.LCCIndexConstant;
-import doWork.LCCIndexGenerator;
-import doWork.LCStatInfo;
+import doWork.jobs.ArchiveJobQueue;
+import doWork.jobs.ArchiveJobQueue.ArchiveJob;
+import doWork.jobs.CommitJobQueue;
+import doWork.jobs.CommitJobQueue.CommitJob;
+import doWork.jobs.CompleteCompactionJobQueue;
+import doWork.jobs.CompleteCompactionJobQueue.CompleteCompactionJob;
+import doWork.jobs.FlushJobQueue;
+import doWork.jobs.FlushJobQueue.FlushJob;
+import doWork.jobs.CompactJobQueue;
+import doWork.jobs.CompactJobQueue.CompactJob;
+import doWork.jobs.CompactJobQueue.RebuildCompactJob;
 
 /**
  * A Store holds a column family in a Region. Its a memstore and a set of zero or more StoreFiles,
@@ -131,12 +139,12 @@ public class Store extends SchemaConfigured implements HeapSize {
 
   protected final MemStore memstore;
   // This stores directory in the filesystem.
-  private final Path homedir;
+  public final Path homedir;
   private final HRegion region;
-  private final HColumnDescriptor family;
-  final FileSystem fs;
-  final Configuration conf;
-  final CacheConfig cacheConf;
+  public final HColumnDescriptor family;
+  public final FileSystem fs;
+  public final Configuration conf;
+  public final CacheConfig cacheConf;
   // ttl in milliseconds.
   private long ttl;
   private final int minFilesToCompact;
@@ -187,7 +195,7 @@ public class Store extends SchemaConfigured implements HeapSize {
   // Comparing KeyValues
   final KeyValue.KVComparator comparator;
 
-  private final Compactor compactor;
+  public final Compactor compactor;
 
   private static final int DEFAULT_FLUSH_RETRIES_NUMBER = 10;
   private static int flush_retries_number;
@@ -201,19 +209,19 @@ public class Store extends SchemaConfigured implements HeapSize {
   IndexKVComparator indexComparator = null;
   long indexCompactCacheMaxSize;
   private short indexReplication = 1;
-  LocalFileSystem localfs = null;
+  public LocalFileSystem localfs = null;
   InetAddress localIP = null;
   // lccindex
   // public boolean useLCCIndexScanner = false;
   protected boolean hasLCCIndex = false;
   Map<byte[], IndexDescriptor> lccIndexMap = null;
-  private LCCIndexGenerator lccindexGenerator = null;
   protected Path lccIndexDir; // /hbase/lcc/A/f/.lccindex
-  protected Path lccLocalHome; // Local_Home/lcc/AAA/f/.lccindex
+  public Path lccLocalHome; // Local_Home/lcc/AAA/f/.lccindex
+  protected Path lccLocalTmpDir; // Local_Home/lcc/AAA/.tmp
   private Path lcIndexLocalBaseDir;
-  protected ArrayList<String> lccRegionServerHostnames = null;
-  protected TreeMap<byte[], DataType> lccIndexQualifierType = null;
-  protected String lccPreviousHoldServer = null;
+  public ArrayList<String> lccRegionServerHostnames = null;
+  public TreeMap<byte[], DataType> lccIndexQualifierType = null;
+  public String lccPrevHoldServer = null;
   protected Path lccHolderName;
 
   /**
@@ -329,16 +337,17 @@ public class Store extends SchemaConfigured implements HeapSize {
     }
     assert ((hasIndex && hasLCCIndex) == false) : "irindex and lccindex be used together";
 
-    System.out.println("winter index status of table " + this.getTableName() + ", family "
-        + this.family.getNameAsString() + ", irindex is: " + hasIndex + ", lccindex is: "
-        + hasLCCIndex);
-
     this.indexDir = new Path(this.homedir, IndexConstants.REGION_INDEX_DIR_NAME);
     this.lccIndexDir = new Path(this.homedir, LCCIndexConstant.INDEX_DIR_NAME);
     // homeDir = hdfs://localhost:9000/hbase/lcc/AAA/f
-    // localhome = lcc/AAA/f/.lccindex
+    // now lccLocalHome = lcc/AAA
     this.lccLocalHome =
         new Path(this.homedir.getParent().getParent().getName(), this.homedir.getParent().getName());
+    // lccLocalTmpDir = /lcc/.lctmp
+    this.lccLocalTmpDir =
+        new Path(this.homedir.getParent().getParent().getName(),
+            LCCIndexConstant.INDEX_TMP_DIR_NAME);
+    // finally, localhome = lcc/AAA/f/.lccindex
     this.lccLocalHome =
         new Path(this.lccLocalHome, new Path(this.homedir.getName(),
             LCCIndexConstant.INDEX_DIR_NAME));
@@ -379,6 +388,7 @@ public class Store extends SchemaConfigured implements HeapSize {
         localfs = LocalFileSystem.getLocal(conf);
         lcIndexLocalBaseDir = new Path(conf.get(LCCIndexConstant.LCINDEX_LOCAL_DIR));
         lccLocalHome = new Path(lcIndexLocalBaseDir, this.lccLocalHome);
+        lccLocalTmpDir = new Path(lcIndexLocalBaseDir, this.lccLocalTmpDir);
         String hostnames = conf.get(LCCIndexConstant.LCINDEX_REGIONSERVER_HOSTNAMES);
         if (localfs == null) {
           throw new IOException("has lcindex but localfs is null ");
@@ -1016,10 +1026,10 @@ public class Store extends SchemaConfigured implements HeapSize {
   private Path internalFlushCache(final SortedSet<KeyValue> set, final long logCacheFlushId,
       TimeRangeTracker snapshotTimeRangeTracker, AtomicLong flushedSize, MonitoredTask status)
       throws IOException {
-    long timeStart = System.currentTimeMillis();
     StoreFile.Writer writer;
     IndexWriter indexWriter = null;
-    LCCIndexWriter lccIndexWriterV2 = null;
+    int counter = 0;
+    Queue<KeyValue> keyvalueQueue = new LinkedList<KeyValue>();
     // Find the smallest read point across all the Scanners.
     long smallestReadPoint = region.getSmallestReadPoint();
     long flushed = 0;
@@ -1068,19 +1078,10 @@ public class Store extends SchemaConfigured implements HeapSize {
           indexSet = new TreeSet<IndexKeyValue>(this.indexComparator);
         }
 
-        if (hasLCCIndex) {
-          String desStr =
-              this.getHRegion().getTableDesc().getValue(LCCIndexConstant.LCC_TABLE_DESC_RANGE_STR);
-          lccindexGenerator = new LCCIndexGenerator(lccIndexQualifierType, desStr);
-        }
-        KeyValue firstKV = null;
-        int lccIndexRecordsCounter = 0;
-        int rawKeyValueCounter = 0;
         long lccFlushStart = System.currentTimeMillis();
         try {
           List<KeyValue> kvs = new ArrayList<KeyValue>();
           boolean hasMore;
-          int counter = 0;
           do {
             hasMore = scanner.next(kvs, compactionKVMax);
             if (!kvs.isEmpty()) {
@@ -1094,7 +1095,6 @@ public class Store extends SchemaConfigured implements HeapSize {
                   kv = kv.shallowCopy();
                   kv.setMemstoreTS(0);
                 }
-                ++rawKeyValueCounter;
                 writer.append(kv);
                 // generate Index KeyValue
                 if (hasIndex && kv.getType() == KeyValue.Type.Put.getCode()) {
@@ -1103,14 +1103,13 @@ public class Store extends SchemaConfigured implements HeapSize {
                   }
                 }
                 if (hasLCCIndex) {
-                  lccindexGenerator.processKeyValue(kv);
+                  keyvalueQueue.add(kv);
                 }
                 flushed += this.memstore.heapSizeChange(kv, true);
               }
               kvs.clear();
             }
           } while (hasMore);
-          System.out.println("winter flush raw data has " + counter + " records");
           if (hasIndex && !indexSet.isEmpty()) {
             indexWriter = createIndexWriterInTmp(pathName);
             for (IndexKeyValue tmpkv : indexSet) {
@@ -1118,21 +1117,9 @@ public class Store extends SchemaConfigured implements HeapSize {
             }
           }
           if (hasLCCIndex) {
-            KeyValue[] lccIndexResultArray = lccindexGenerator.generatedSortedKeyValueArray();
-            if (lccIndexResultArray != null && lccIndexResultArray.length > 0) {
-              lccIndexRecordsCounter = lccIndexResultArray.length;
-              lccIndexWriterV2 =
-                  new LCCIndexWriter(pathName, lccindexGenerator.getResultStatistic(),
-                      lccindexGenerator.getLCRangeStatistic(), snapshotTimeRangeTracker);
-              for (KeyValue kv : lccIndexResultArray) {
-                if (firstKV == null) {
-                  firstKV = kv;
-                }
-                lccIndexWriterV2.append(kv);
-              }
-            } else {
-              System.out.println("winter the lccResults is zero, how come?!");
-            }
+            FlushJob flushJob =
+                new FlushJob(this, keyvalueQueue, pathName, snapshotTimeRangeTracker);
+            FlushJobQueue.getInstance().addJob(flushJob);
           }
         } finally {
           // Write out the log sequence number that corresponds to this output
@@ -1144,28 +1131,24 @@ public class Store extends SchemaConfigured implements HeapSize {
           if (indexWriter != null) {
             indexWriter.close();
           }
-          if (lccIndexWriterV2 != null) {
-            // winter flush happens in the same host in one execution
-            // however, the HFile are not located in the same host
-            // the problem is: how to move the lccindex files to the proper IP? or just flush the
-            // file to that host?
-            InetAddress thisip = InetAddress.getLocalHost();
-            lccIndexWriterV2.close();
-            System.out.println("winter flushing lccIndexWriter with size: "
-                + lccIndexRecordsCounter + " at ip: " + thisip.getHostAddress() + ", host: "
-                + thisip.getHostName());
-            System.out.println("winter memstore flush lccindex cost: " + 1.0
-                * (System.currentTimeMillis() - lccFlushStart) / 1000.0 + " seconds for raw size:"
-                + rawKeyValueCounter + " and lcc size: " + lccIndexRecordsCounter);
-          }
-          if (lccindexGenerator != null) {
-            lccindexGenerator.clear();
-          } else { // lccindexGenerator = null, say no lccindex used
-            System.out.println("winter memstore flush raw cost: " + 1.0
-                * (System.currentTimeMillis() - lccFlushStart) / 1000.0 + " seconds for raw size:"
-                + rawKeyValueCounter);
-          }
+          System.out.println("winter memstore flush raw cost: " + 1.0
+              * (System.currentTimeMillis() - lccFlushStart) / 1000.0 + " seconds for raw size:"
+              + counter);
           indexSet = null;
+          if (hasLCCIndex) {
+            long sleepTime =
+                (long) (conf.getLong("hbase.rpc.timeout", 600000) / 3 * FlushJobQueue.getInstance()
+                    .getSleepFactor());
+            if (sleepTime > 0) {
+              System.out.println("winter flush memstore sleep " + sleepTime / 1000.0
+                  + "s to wait for the flush job finish");
+              try {
+                Thread.sleep(sleepTime);
+              } catch (InterruptedException e) {
+                e.printStackTrace();
+              }
+            }
+          }
         }
       }
     } finally {
@@ -1179,99 +1162,21 @@ public class Store extends SchemaConfigured implements HeapSize {
     return pathName;
   }
 
-  public class LCCIndexWriter {
-    final Path basePath;
-    TreeMap<byte[], StoreFile.Writer> indexWriters = new TreeMap<byte[], StoreFile.Writer>(
-        Bytes.BYTES_COMPARATOR);
-    List<LCStatInfo> rangeInfoList;
-
-    // raw pathName is: /hbase/AAA/xxx/.tmp/BBB,
-    // writerBaseDir = /hbase/lcc/AAA/.tmp/BBB.lccindex
-    // file /hbase/lcc/AAA/.tmp/BBB.lccindex/Q1-Q4 indicates a index file for qualifier Q1/Q4
-    public LCCIndexWriter(Path rawHFile, Map<byte[], Integer> statistic,
-        List<LCStatInfo> rangeInfoList, TimeRangeTracker tracker) throws IOException {
-      this.rangeInfoList = rangeInfoList;
-      if (localfs != null) {
-        basePath = getLocalBaseDirByFileName(rawHFile);
-        if (!localfs.exists(basePath)) { // create dir
-          localfs.mkdirs(basePath);
-        }
-      } else {
-        basePath = mWinterGetLCCIndexFilePathFromHFilePathInTmp(rawHFile);
-      }
-      for (Entry<byte[], Integer> entry : statistic.entrySet()) {
-        if (entry.getValue() > 0) {
-          // targetPath = /hbase/lcc/AAA/.tmp/BBB.lccindex/Q1-Q4
-          Path targetPath = new Path(basePath, Bytes.toString(entry.getKey()));
-          StoreFile.Writer writer = null;
-          if (localfs != null) {
-            writer =
-                mWinterCreateWriterInLocalTmp(entry.getValue(), family.getCompression(), false,
-                  true, targetPath);
-            writeStatInfo(localfs, basePath, Bytes.toString(entry.getKey()));
-          } else {
-            writer =
-                mWinterCreateWriterInTmp(entry.getValue(), family.getCompression(), false, true,
-                  targetPath);
-            writeStatInfo(fs, basePath, Bytes.toString(entry.getKey()));
-          }
-          if (tracker != null) {
-            writer.setTimeRangeTracker(tracker);
-          }
-          indexWriters.put(entry.getKey(), writer);
-        } else {
-          System.out.println("winter ignore cf: " + Bytes.toString(entry.getKey())
-              + " bacause it contains " + entry.getValue() + " rows");
-        }
-      }
-    }
-
-    private void writeStatInfo(FileSystem fs, Path basePath, String qualifierName)
-        throws IOException {
-      for (LCStatInfo stat : rangeInfoList) {
-        if (stat.getName().equals(qualifierName)) {
-          Path pt = new Path(basePath, qualifierName + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-          BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fs.create(pt, true)));
-          if (stat.isSet()) {
-            for (long l : stat.getSetValues()) {
-              bw.write(l + "\n");
-            }
-          } else {
-            for (long l : stat.getCounts()) {
-              bw.write(l + "\n");
-            }
-          }
-          bw.close();
-          return;
-        }
-      }
-    }
-
-    public Path getBaseDirPath() {
-      return this.basePath;
-    }
-
-    public void append(KeyValue kv) throws IOException {
-      byte[] rawQualifier =
-          Bytes.toBytes(LCCIndexGenerator.mWinterRecoverLCCQualifier_Str(Bytes.toString(kv
-              .getFamily())));
-      if (!indexWriters.containsKey(rawQualifier)) {
-        System.out.println("winter error, try to write indexed value but writer not exists");
-      } else {
-        indexWriters.get(rawQualifier).append(kv);
-      }
-    }
-
-    public void close() throws IOException {
-      for (Entry<byte[], StoreFile.Writer> entry : indexWriters.entrySet()) {
-        entry.getValue().close();
-        System.out.println("winter flushing memstore to file: " + entry.getValue().getPath());
-      }
-    }
+  public Path getLocalBaseDirByFileName(Path rawHFile) {
+    return getLocalBaseDirByFileName(this.lccLocalTmpDir, rawHFile);
   }
 
-  public Path getLocalBaseDirByFileName(Path rawHFile) {
-    return getLocalBaseDirByFileName(this.lccLocalHome, rawHFile);
+  /*
+   * @param rawHFile: hdfs://localhost:9000/hbase/lcc/AAA/.tmp/BBB
+   * @param want return: lcIndexLocalBaseDir/lcc/AAA/.lctmp/BBB.lccindex
+   * @param tempHome = lcIndexLocalBaseDir/lcc/AAA/.lctmp
+   */
+  public static Path getLocalBaseDirByFileName(Path tempHome, Path rawHFile) {
+    return new Path(tempHome, rawHFile.getName() + LCCIndexConstant.INDEX_DIR_NAME);
+  }
+
+  public Path getLocalBaseDirByFileName_MethodDiscarded(Path rawHFile) {
+    return getLocalBaseDirByFileName_MethodDiscarded(this.lccLocalHome, rawHFile);
   }
 
   /*
@@ -1279,7 +1184,7 @@ public class Store extends SchemaConfigured implements HeapSize {
    * @param want return: lcIndexLocalBaseDir/lcc/AAA/.tmp/BBB.lccindex
    * @param localhome = lcIndexLocalBaseDir/lcc/AAA/f/.lccindex
    */
-  public static Path getLocalBaseDirByFileName(Path localHome, Path rawHFile) {
+  public static Path getLocalBaseDirByFileName_MethodDiscarded(Path localHome, Path rawHFile) {
     Path p =
         new Path(rawHFile.getParent().getName(), rawHFile.getName()
             + LCCIndexConstant.INDEX_DIR_NAME); // now = .tmp/BBB.lccindex
@@ -1301,7 +1206,6 @@ public class Store extends SchemaConfigured implements HeapSize {
     // Write-out finished successfully, move into the right spot
     String fileName = path.getName();
     Path dstPath = new Path(homedir, fileName);
-    // System.out.println("winter path: " + wint);
 
     Path indexPath = new Path(path.toString() + IndexConstants.REGION_INDEX_DIR_NAME);
     Path indexdstPath = new Path(indexDir, fileName);
@@ -1319,7 +1223,8 @@ public class Store extends SchemaConfigured implements HeapSize {
 
     if (this.hasLCCIndex) {
       if (localfs != null) {
-        mWinterCommitLCCLocal(path, status);
+        CommitJob commitJob = new CommitJob(this, path, dstPath);
+        CommitJobQueue.getInstance().addJob(commitJob);
       } else {
         mWinterCommitLCCHDFS(path, status);
       }
@@ -1418,64 +1323,6 @@ public class Store extends SchemaConfigured implements HeapSize {
     }
   }
 
-  private void mWinterCommitLCCLocal(final Path path, MonitoredTask status) throws IOException {
-    // target must be f/.lccindex/Q1-Q4/BBB
-    // path = /hbase/lcc/AAA/.tmp/BBB
-    Path lccLocalTmpPath = getLocalBaseDirByFileName(path);
-    // before commit, dir lccLocalPath have already got files from flush or commit
-    FileStatus[] lccLocalTempFileStatus = localfs.listStatus(lccLocalTmpPath);
-    if (lccLocalTempFileStatus != null && lccLocalTempFileStatus.length > 0) {
-      for (FileStatus fileStatus : lccLocalTempFileStatus) {
-        if (fileStatus.getPath().getName().endsWith(LCCIndexConstant.LC_STAT_FILE_SUFFIX)) continue;
-        // fileStatus = Local_Home/lcc/AAA/.tmp/BBB.lccindex/Q1-Q4
-        // indexQualifierPath = Local_Home/hbase/lcc/AAA/f/.lccindex/Q1-Q4
-        // lccLocalHome = Local_Home/lcc/AAA/f/.lccindex
-        Path indexQualifierPath = new Path(lccLocalHome, fileStatus.getPath().getName());
-        // create dir if not existed
-        if (!localfs.exists(indexQualifierPath)) {
-          HBaseFileSystem.makeDirOnFileSystem(localfs, indexQualifierPath);
-        }
-
-        // move stat file
-        Path rawStatFile =
-            new Path(fileStatus.getPath().getParent(), fileStatus.getPath().getName()
-                + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-        Path destStatFile =
-            new Path(indexQualifierPath, path.getName() + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-        // System.out.println("winter move raw stat file: " + rawStatFile + " to " +
-        // targetStatFile);
-        if (!HBaseFileSystem.renameDirForFileSystem(localfs, rawStatFile, destStatFile)) {
-          LOG.warn("Unable to rename lccindex local stat file " + rawStatFile + " to "
-              + destStatFile);
-        }
-
-        // move index file
-        // lccIndexDestPath = HOME/lcc/AAA/f/.lccindex/Q1-Q4/BBB
-        Path lccIndexDestPath = new Path(indexQualifierPath, path.getName());
-        LOG.debug("Renaming flushed lccindex local file from " + fileStatus.getPath() + " to "
-            + lccIndexDestPath);
-        System.out.println("winter renaming flushed lccindex local file from "
-            + fileStatus.getPath() + " to " + lccIndexDestPath);
-        if (!HBaseFileSystem
-            .renameDirForFileSystem(localfs, fileStatus.getPath(), lccIndexDestPath)) {
-          LOG.warn("Unable to rename lccindex local file " + fileStatus.getPath() + " to "
-              + lccIndexDestPath);
-        }
-      }
-      // delete dir if necessary
-      lccLocalTempFileStatus = localfs.listStatus(lccLocalTmpPath);
-      if (lccLocalTempFileStatus != null && lccLocalTempFileStatus.length == 0) {
-        localfs.delete(lccLocalTmpPath, true);
-      } else if (lccLocalTempFileStatus != null) {
-        WinterOptimizer.ThrowWhenCalled("winter commit local lcc dir should be empty but not: "
-            + lccLocalTmpPath);
-      }
-    } else {
-      // no lccindex exists
-      System.out.println("winter lccIndexPath local dir not exist: " + lccLocalTmpPath);
-    }
-  }
-
   /*
    * @return Writer for a new IndexFile in the tmp dir.
    */
@@ -1508,7 +1355,7 @@ public class Store extends SchemaConfigured implements HeapSize {
   }
 
   // return hfilePath.lccindex
-  Path mWinterGetLCCIndexFilePathFromHFilePathInTmp(Path hfilePath) throws IOException {
+  public Path mWinterGetLCCIndexFilePathFromHFilePathInTmp(Path hfilePath) throws IOException {
     return new Path((hfilePath != null ? hfilePath.toString() : StoreFile.getUniqueFile(fs,
       region.getTmpDir()).toString())
         + LCCIndexConstant.INDEX_DIR_NAME);
@@ -1789,35 +1636,55 @@ public class Store extends SchemaConfigured implements HeapSize {
     long compactStart = System.currentTimeMillis();
     try {
       StoreFile.Writer writer = this.compactor.compact(cr, maxId);
-      System.out.println("winter compact raw " + (cr.isMajor() ? "major" : "minor") + ", cost "
-          + (System.currentTimeMillis() - compactStart) * 1.0 / 1000.0 + " seconds");
+      // System.out.println("winter compact raw " + (cr.isMajor() ? "major" : "minor") + ", cost "
+      // + (System.currentTimeMillis() - compactStart) * 1.0 / 1000.0 + " seconds");
 
       // compact index files
       if (hasIndex && writer != null) {
         this.compactor.compactIndex(cr, writer.getPath());
       }
 
+      CompactJob minorCompactJob = null;
+
       // compact lccindex files
       if (hasLCCIndex && writer != null) {
-        if (localfs != null) this.compactor.mWinterCompactLCCIndexLocal(cr, writer.getPath());
-        else this.compactor.mWinterCompactLCCIndex(cr, writer.getPath());
+        if (localfs != null) {
+          minorCompactJob = this.compactor.mWinterCompactLCCIndexLocal(cr, writer.getPath());
+        } else {
+          this.compactor.mWinterCompactLCCIndex(cr, writer.getPath());
+        }
         System.out.println("winter compact lcc " + (cr.isMajor() ? "major" : "minor") + ", cost "
             + (System.currentTimeMillis() - compactStart) * 1.0 / 1000.0 + " seconds");
+      }
+
+      if (hasLCCIndex) {
+        long sleepTime =
+            (long) (conf.getLong("hbase.rpc.timeout", 600000) / 3 * CompactJobQueue.getInstance()
+                .getSleepFactor());
+        if (sleepTime > 0) {
+          System.out.println("winter compact sleep " + sleepTime / 1000.0
+              + "s to wait for the compact job to finish");
+          try {
+            Thread.sleep(sleepTime);
+          } catch (InterruptedException e) {
+            e.printStackTrace();
+          }
+        }
       }
 
       // Move the compaction into place.
       if (this.conf.getBoolean("hbase.hstore.compaction.complete", true)) {
         long completeCompactionStart = System.currentTimeMillis();
-        sf = completeCompaction(filesToCompact, writer, cr.isMajor());
-        if (this.hasLCCIndex) {
-          System.out.println("winter completeCompaction lcc " + (cr.isMajor() ? "major" : "minor")
-              + ", cost " + (System.currentTimeMillis() - completeCompactionStart) * 1.0 / 1000.0
-              + " seconds");
-        } else {
-          System.out.println("winter completeCompaction raw " + (cr.isMajor() ? "major" : "minor")
-              + ", cost " + (System.currentTimeMillis() - completeCompactionStart) * 1.0 / 1000.0
-              + " seconds");
-        }
+        sf = completeCompaction(filesToCompact, writer, cr.isMajor(), minorCompactJob);
+        // if (this.hasLCCIndex) {
+        // System.out.println("winter completeCompaction lcc " + (cr.isMajor() ? "major" : "minor")
+        // + ", cost " + (System.currentTimeMillis() - completeCompactionStart) * 1.0 / 1000.0
+        // + " seconds");
+        // } else {
+        // System.out.println("winter completeCompaction raw " + (cr.isMajor() ? "major" : "minor")
+        // + ", cost " + (System.currentTimeMillis() - completeCompactionStart) * 1.0 / 1000.0
+        // + " seconds");
+        // }
         if (region.getCoprocessorHost() != null) {
           region.getCoprocessorHost().postCompact(this, sf, cr);
         }
@@ -1884,7 +1751,7 @@ public class Store extends SchemaConfigured implements HeapSize {
       StoreFile.Writer writer =
           this.compactor.compactForTesting(this, conf, filesToCompact, isMajor, maxId);
       // Move the compaction into place.
-      StoreFile sf = completeCompaction(filesToCompact, writer, isMajor);
+      StoreFile sf = completeCompaction(filesToCompact, writer, isMajor, null);
       if (region.getCoprocessorHost() != null) {
         region.getCoprocessorHost().postCompact(this, sf, null);
       }
@@ -2355,7 +2222,6 @@ public class Store extends SchemaConfigured implements HeapSize {
     }
 
     return compactSelection;
-
   }
 
   /**
@@ -2436,6 +2302,14 @@ public class Store extends SchemaConfigured implements HeapSize {
    */
   StoreFile completeCompaction(final Collection<StoreFile> compactedFiles,
       final StoreFile.Writer compactedFile, boolean isMajor) throws IOException {
+    return completeCompaction(compactedFiles, compactedFile, isMajor, null);
+  }
+
+  StoreFile completeCompaction(final Collection<StoreFile> compactedFiles,
+      final StoreFile.Writer compactedFile, boolean isMajor, CompactJob compactJob)
+      throws IOException {
+    CompleteCompactionJob completeCompactionJob = null;
+
     // 0. Moving the new index file into place,
     if (compactedFile != null) {
     }
@@ -2461,7 +2335,9 @@ public class Store extends SchemaConfigured implements HeapSize {
       // move lccindex now
       if (this.hasLCCIndex) {
         if (localfs != null) {
-          mWinterLCCCompleteCompactionLocal(compactedFiles, compactedFile);
+          completeCompactionJob =
+              new CompleteCompactionJob(this, compactedFile.getPath(), compactJob);
+          CompleteCompactionJobQueue.getInstance().addJob(completeCompactionJob);
         } else if (hasLCCIndex) {
           mWinterLCCCompleteCompactionHDFS(compactedFiles, compactedFile);
         }
@@ -2488,7 +2364,11 @@ public class Store extends SchemaConfigured implements HeapSize {
           new StoreFile(this.fs, destPath, this.conf, this.cacheConf,
               this.family.getBloomFilterType(), this.dataBlockEncoder);
       passSchemaMetricsTo(result);
-      result.createReader();
+      StoreFile.Reader r = result.createReader();
+      if (compactJob != null && compactJob instanceof RebuildCompactJob) {
+        ((RebuildCompactJob) compactJob).setMajorReady(destPath, r);
+        CompactJobQueue.getInstance().promoteJob(compactJob, false);
+      }
     }
     try {
       this.lock.writeLock().lock();
@@ -2525,7 +2405,10 @@ public class Store extends SchemaConfigured implements HeapSize {
         compactedFiles);
       // now delete local fs
       if (this.hasLCCIndex && localfs != null) {
-        mWinterArchiveStoreFileLocal(compactedFiles, isMajor);
+        ArchiveJob job =
+            new ArchiveJob(this, compactedFiles, compactedFile.getPath(), completeCompactionJob,
+                isMajor);
+        ArchiveJobQueue.getInstance().addJob(job);
       }
     } catch (IOException e) {
       e = RemoteExceptionHandler.checkIOException(e);
@@ -2588,8 +2471,8 @@ public class Store extends SchemaConfigured implements HeapSize {
         // + lccIndexDstPath.getParent());
         HBaseFileSystem.makeDirOnFileSystem(fs, lccIndexDstPath.getParent());
       }
-//      System.out.println("winter renaming compacted lcc index file at " + fileStatus.getPath()
-//          + " to " + lccIndexDstPath);
+      // System.out.println("winter renaming compacted lcc index file at " + fileStatus.getPath()
+      // + " to " + lccIndexDstPath);
       LOG.info("Renaming compacted index file at " + fileStatus.getPath() + " to "
           + lccIndexDstPath);
       if (!HBaseFileSystem.renameDirForFileSystem(fs, fileStatus.getPath(), lccIndexDstPath)) {
@@ -2605,109 +2488,6 @@ public class Store extends SchemaConfigured implements HeapSize {
     } else {
       WinterOptimizer.ThrowWhenCalled("winter completeCompaction lcc dir should be empty but not: "
           + lccIndexDirPath);
-    }
-  }
-
-  // move index file and stat file
-  private void mWinterLCCCompleteCompactionLocal(final Collection<StoreFile> compactedFiles,
-      final StoreFile.Writer compactedFile) throws IOException {
-    Path lccLocalTmpPath = getLocalBaseDirByFileName(compactedFile.getPath());
-    // dir lccLocalPath has already got files from compact
-    FileStatus[] fileStatusArray = localfs.listStatus(lccLocalTmpPath);
-    if (fileStatusArray != null) {
-      for (FileStatus fileStatus : fileStatusArray) {
-        // fileStatus = /hbase/lcc/AAA.tmp/BBB.lccindex/qualifier(-stat)
-        // lccLocalHome = /lcc/AAA/f/.lccindex
-        if (fileStatus.getPath().getName().endsWith(LCCIndexConstant.LC_STAT_FILE_SUFFIX)) {
-          // fileStatus = /lcc/AAA/.tmp/.lccindex/qualifier-stat
-          // lccStatDstPath = /hbase/lcc/AAA/.lccindex/qualifier/BBB-stat
-          String name = fileStatus.getPath().getName();
-          Path lccStatDstPath =
-              new Path(new Path(lccLocalHome, name.substring(0, name.length()
-                  - LCCIndexConstant.LC_STAT_FILE_SUFFIX.length())), compactedFile.getPath()
-                  .getName() + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-          if (!localfs.exists(lccStatDstPath.getParent())) {
-            HBaseFileSystem.makeDirOnFileSystem(localfs, lccStatDstPath.getParent());
-          }
-          LOG.info("Renaming compacted local index stat file at " + fileStatus.getPath() + " to "
-              + lccStatDstPath);
-          if (!HBaseFileSystem
-              .renameDirForFileSystem(localfs, fileStatus.getPath(), lccStatDstPath)) {
-            LOG.error("Failed move of compacted local index stat file " + fileStatus.getPath()
-                + " to " + lccStatDstPath);
-            WinterOptimizer.NeedImplementation("Failed move of compacted index stat file "
-                + fileStatus.getPath() + " to " + lccStatDstPath);
-          }
-        } else {
-          // fileStatus = /lcc/AAA/.tmp/.lccindex/qualifier
-          // lccIndexDir = /hbase/lcc/AAA/f/.lccindex/qualifier/BBB
-          Path lccIndexDstPath =
-              new Path(new Path(lccLocalHome, fileStatus.getPath().getName()), compactedFile
-                  .getPath().getName());
-          // System.out.println("winter checking lccIndexDstPath: " + lccIndexDstPath);
-          if (!localfs.exists(lccIndexDstPath.getParent())) {
-            HBaseFileSystem.makeDirOnFileSystem(localfs, lccIndexDstPath.getParent());
-          }
-          System.out.println("winter renaming compacted local index file at " + fileStatus.getPath()
-              + " to " + lccIndexDstPath);
-          LOG.info("Renaming compacted local index file at " + fileStatus.getPath() + " to "
-              + lccIndexDstPath);
-          if (!HBaseFileSystem.renameDirForFileSystem(localfs, fileStatus.getPath(),
-            lccIndexDstPath)) {
-            LOG.error("Failed move of compacted local index file " + fileStatus.getPath() + " to "
-                + lccIndexDstPath);
-            WinterOptimizer.NeedImplementation("Failed move of compacted index file "
-                + fileStatus.getPath() + " to " + lccIndexDstPath);
-          }
-        }
-      }
-      // delete if necessary
-      fileStatusArray = localfs.listStatus(lccLocalTmpPath);
-      if (fileStatusArray != null && fileStatusArray.length == 0) {
-        localfs.delete(lccLocalTmpPath, true);
-      } else if (fileStatusArray != null) {
-        WinterOptimizer
-            .ThrowWhenCalled("winter completeCompaction lcc dir should be empty but not: "
-                + lccLocalTmpPath + ", now size: " + fileStatusArray.length);
-      }
-    }
-  }
-
-  // delete local file?
-  private void mWinterArchiveStoreFileLocal(final Collection<StoreFile> compactedFiles,
-      boolean isMajor) throws IOException {
-    // delete local lccindex file
-    // hfilePath = /hbase/lcc/AAA/.tmp/BBB/
-    // lccLocalHome = /lcc/AAA/f/.lccindex
-    FileStatus[] fileStatusList = localfs.listStatus(lccLocalHome);
-    if (fileStatusList == null || fileStatusList.length == 0) {
-      WinterOptimizer.NeedImplementation("winter in completeCompaction has no index file under: "
-          + lccLocalHome);
-      throw new IOException("winter completeCompaction has no index file under: " + lccLocalHome);
-    }
-    for (FileStatus fileStatus : fileStatusList) {
-      for (StoreFile lccToBeCompacted : compactedFiles) {
-        // lccToBeCompacted = /hbase/lcc/AAA/f/B1-B3, AAA is always the same
-        // existingLCCIndexPath = /hbase/lcc/AAA/f/.lccindex/Q1/Bi. In this loop, Bi is changing
-        Path existingLCCIndexPath =
-            new Path(fileStatus.getPath(), lccToBeCompacted.getPath().getName());
-        Path existingLCCStatPath =
-            new Path(fileStatus.getPath(), lccToBeCompacted.getPath().getName()
-                + LCCIndexConstant.LC_STAT_FILE_SUFFIX);
-        if (localfs.exists(existingLCCIndexPath)) {
-          // System.out.println("winter now to delete " + existingLCCIndexPath);
-          localfs.delete(existingLCCIndexPath, true);
-          localfs.delete(existingLCCStatPath, true);
-        } else {
-          if (lccToBeCompacted.isReference() && isMajor) {
-            // is is major and is reference, the file can be ignored then
-          } else {
-            Compactor.deleteRemoteLCCLocalFile(this, existingLCCIndexPath);
-            Compactor.deleteRemoteLCCLocalFile(this, existingLCCStatPath);
-          }
-        }
-        System.out.println("winter archive in complete compact " + existingLCCIndexPath);
-      }
     }
   }
 

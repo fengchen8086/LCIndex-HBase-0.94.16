@@ -175,10 +175,6 @@ public class StoreScanner extends NonLazyKeyValueScanner implements KeyValueScan
           tempList.add((MemStoreScanner) scanner);
         }
       }
-      if (tempList.size() > 0) {
-        System.out.println("winter init StoreScanner MemStoreScanner / total scanners: "
-            + tempList.size() + " / " + scanners.size());
-      }
       for (MemStoreScanner scanner : tempList) {
         scanner.seek(KeyValue.LOWESTKEY);
         LCCIndexMemStoreScanner lccMemStoreScanner =
@@ -188,11 +184,10 @@ public class StoreScanner extends NonLazyKeyValueScanner implements KeyValueScan
         scanners.add(lccMemStoreScanner);
       }
       for (KeyValueScanner scanner : scanners) {
-        // scanner.seek(matcher.getStartKey());
         scanner.seek(matcher.getStartKey());
-        // System.out.println("winter init StoreScanner, peek of scanner: "
-        // + LCCIndexConstant.mWinterToPrint(scanner.peek()) + ", scanner is: "
-        // + scanner.getClass().getName());
+        System.out.println("winter init StoreScanner, peek of scanner: "
+            + LCCIndexConstant.mWinterToPrint(scanner.peek()) + ", scanner is: "
+            + scanner.getClass().getName());
       }
     }
     // Combine all seeked scanners with a heap

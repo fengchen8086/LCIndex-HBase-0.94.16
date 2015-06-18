@@ -32,8 +32,8 @@ public class IndexTableDescriptor {
   private final HTableDescriptor descriptor;
 
   // all IndexSpecifications
-  private final Map<byte[], IndexSpecification> indexSpecifications =
-      new TreeMap<byte[], IndexSpecification>(Bytes.BYTES_COMPARATOR);
+  private final Map<byte[], IndexSpecification> indexSpecifications = new TreeMap<byte[], IndexSpecification>(
+      Bytes.BYTES_COMPARATOR);
 
   // all index columns, constructed from all IndexSpecifications
   private byte[][] indexedColumns;
@@ -117,6 +117,15 @@ public class IndexTableDescriptor {
     return indexSpecifications.values().toArray(new IndexSpecification[0]);
   }
 
+  // winter
+  public boolean isIndexColumn(byte[] indexColumn) {
+    return this.indexSpecifications.containsKey(indexColumn);
+  }
+
+  public Set<byte[]> getIndexColumnSet() {
+    return this.indexSpecifications.keySet();
+  }
+
   public IndexSpecification getIndexSpecification(byte[] indexColumn)
       throws IndexNotExistedException {
     if (!this.indexSpecifications.containsKey(indexColumn)) {
@@ -160,6 +169,8 @@ public class IndexTableDescriptor {
 
     checkNewIndex(index);
 
+    System.out.println("winter want to check index column name: "
+        + Bytes.toString(index.getIndexColumn()));
     indexSpecifications.put(index.getIndexColumn(), index);
     this.update();
     this.writeToTable();
@@ -344,9 +355,8 @@ public class IndexTableDescriptor {
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
       DataOutputStream dos = new DataOutputStream(baos);
 
-      IndexSpecificationArray indexArray =
-          new IndexSpecificationArray(indexSpecifications.values().toArray(
-            new IndexSpecification[0]));
+      IndexSpecificationArray indexArray = new IndexSpecificationArray(indexSpecifications.values()
+          .toArray(new IndexSpecification[0]));
 
       indexArray.write(dos);
       dos.flush();
@@ -378,6 +388,37 @@ public class IndexTableDescriptor {
 
     if (indexSpec.getIndexType() == IndexType.CCINDEX) {
       for (HColumnDescriptor desc : this.descriptor.getFamilies()) {
+        indexTableDescriptor.addFamily(desc);
+      }
+    } else if (indexSpec.getIndexType() == IndexType.IMPSECONDARYINDEX) {
+      Set<byte[]> family = indexSpec.getAdditionMap().keySet();
+      if (family.size() != 0) {
+        for (byte[] name : family) {
+          indexTableDescriptor.addFamily(this.descriptor.getFamily(name));
+        }
+      } else {
+        indexTableDescriptor.addFamily(this.descriptor.getFamily(indexSpec.getFamily()));
+      }
+    } else if (indexSpec.getIndexType() == IndexType.SECONDARYINDEX) {
+      indexTableDescriptor.addFamily(this.descriptor.getFamily(indexSpec.getFamily()));
+    }
+
+    indexTableDescriptor.setValue(IndexConstants.INDEX_TYPE,
+      Bytes.toBytes(indexSpec.getIndexType().toString())); // record the index type
+    return indexTableDescriptor;
+  }
+
+  protected HTableDescriptor createCCTTableDescriptor(byte[] indexColumn)
+      throws IndexNotExistedException {
+    IndexSpecification indexSpec = this.getIndexSpecification(indexColumn);
+    HTableDescriptor indexTableDescriptor = new HTableDescriptor(Bytes.add(
+      indexSpec.getIndexTableName(), IndexTable.CCT_FIX));
+    System.out.println("winter new cct table name: "
+        + Bytes.toString(Bytes.add(indexSpec.getIndexTableName(), IndexTable.CCT_FIX)));
+
+    if (indexSpec.getIndexType() == IndexType.CCINDEX) {
+      for (HColumnDescriptor desc : this.descriptor.getFamilies()) {
+        // column is f, the only family
         indexTableDescriptor.addFamily(desc);
       }
     } else if (indexSpec.getIndexType() == IndexType.IMPSECONDARYINDEX) {
@@ -456,5 +497,10 @@ public class IndexTableDescriptor {
    */
   public boolean hasIndex() {
     return (indexedColumns != null && indexedColumns.length != 0);
+  }
+
+  public byte[] getCCTTableName(byte[] indexColumn) throws IndexNotExistedException {
+    IndexSpecification indexSpec = this.getIndexSpecification(indexColumn);
+    return Bytes.add(indexSpec.getIndexTableName(), IndexTable.CCT_FIX);
   }
 }

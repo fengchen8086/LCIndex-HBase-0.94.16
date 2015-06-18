@@ -91,6 +91,16 @@ public class CCIndexAdmin {
     admin.createTable(descriptor, indexDesc.getSplitKeys());
     admin.disableTable(descriptor.getName());
 
+    // corresponding cct
+    System.out.println("winter new cct of main table： "
+        + Bytes.toString(Bytes.add(indexDesc.getTableDescriptor().getName(), IndexTable.CCT_FIX)));
+    HTableDescriptor cctDesc = new HTableDescriptor(Bytes.add(indexDesc.getTableDescriptor()
+        .getName(), IndexTable.CCT_FIX));
+    for (HColumnDescriptor f : descriptor.getFamilies()) {
+      cctDesc.addFamily(f);
+    }
+    admin.createTable(cctDesc, indexDesc.getSplitKeys());
+
     if (indexDesc.hasIndex()) {
       this.addIndexes(indexDesc.getTableDescriptor().getName(), indexDesc.getIndexSpecifications());
     }
@@ -460,7 +470,12 @@ public class CCIndexAdmin {
       for (IndexSpecification spec : indexSpecs) {
         admin.createTable(indexDesc.createIndexTableDescriptor(spec.getIndexColumn()),
           spec.getSplitKeys());
+        if (spec.getIndexType() == IndexType.CCINDEX) {
+          admin.createTable(indexDesc.createCCTTableDescriptor(spec.getIndexColumn()),
+            spec.getSplitKeys());
+        }
         admin.disableTable(spec.getIndexTableName());
+        // admin.disableTable(Bytes.toString(indexDesc.getCCTTableName(spec.getIndexColumn())));
       }
       // modify base table
       admin.modifyTable(tableName, indexDesc.getTableDescriptor());
@@ -637,9 +652,8 @@ public class CCIndexAdmin {
       if (admin.tableExists(indexSpec.getIndexTableName())) {
         admin.enableTable(indexSpec.getIndexTableName());
       } else {
-        errStr +=
-            "[column:" + Bytes.toString(indexSpec.getIndexColumn()) + ",type:"
-                + indexSpec.getIndexType().toString() + "]";
+        errStr += "[column:" + Bytes.toString(indexSpec.getIndexColumn()) + ",type:"
+            + indexSpec.getIndexType().toString() + "]";
       }
     }
     admin.enableTable(tableName);
@@ -683,9 +697,8 @@ public class CCIndexAdmin {
         if (admin.tableExists(indexSpec.getIndexTableName())) {
           admin.disableTable(indexSpec.getIndexTableName());
         } else {
-          errStr +=
-              "[column:" + Bytes.toString(indexSpec.getIndexColumn()) + ",type:"
-                  + indexSpec.getIndexType().toString() + "]";
+          errStr += "[column:" + Bytes.toString(indexSpec.getIndexColumn()) + ",type:"
+              + indexSpec.getIndexType().toString() + "]";
           indexDesc.deleteIndex(indexSpec.getIndexColumn());
         }
       }

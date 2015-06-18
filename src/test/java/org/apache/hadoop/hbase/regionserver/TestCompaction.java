@@ -601,7 +601,7 @@ public class TestCompaction extends HBaseTestCase {
     stream.close();
 
     try {
-      store.completeCompaction(storeFiles, compactedFile, true);
+      store.completeCompaction(storeFiles, compactedFile, false);
     } catch (Exception e) {
       // The complete compaction should fail and the corrupt file should remain
       // in the 'tmp' directory;

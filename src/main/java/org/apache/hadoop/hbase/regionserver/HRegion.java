@@ -3713,6 +3713,7 @@ public class HRegion implements HeapSize { // , Writable{
     private boolean useLCCIndex = false;
     private KeyValueHeap lccIndexStoreHeap = null;
     private byte[] lccIndexStopRow = null;
+    private String lcStopRowStr = null;
     private Range lccMainRowkeyRange = null;
     private byte[] lccMainQualifier = null;
     private ArrayList<Range> lccFilterRanges = null;
@@ -3838,13 +3839,13 @@ public class HRegion implements HeapSize { // , Writable{
         assert indexFamily.hasIndex()
             && indexFamily.getIndexType() == IndexColumnDescriptor.IndexType.LCCIndex;
         lccIndexQualifierType = indexFamily.mWinterGetQualifierType();
-        // for (Map.Entry<byte[], DataType> entry : lccIndexQualifierType.entrySet()) {
-        // System.out.println("winter lccIndexQualifierType: " + Bytes.toString(entry.getKey())
-        // + ", " + entry.getValue());
-        // }
+        for (Map.Entry<byte[], DataType> entry : lccIndexQualifierType.entrySet()) {
+          System.out.println("winter lccIndexQualifierType: " + Bytes.toString(entry.getKey())
+              + ", " + entry.getValue());
+        }
         lccMainRowkeyRange =
             mWinterUpdatePriLCCIndex(lccFilterRanges, scan.getFamilyMap().entrySet());
-        // mWinterPrintRanges(lccMainRowkeyRange, lccFilterRanges);
+        mWinterPrintRanges(lccMainRowkeyRange, lccFilterRanges);
         if (lccMainRowkeyRange.getStartValue() != null) {
           scan.setStartRow(lccMainRowkeyRange.getStartValue());
         }
@@ -3952,7 +3953,8 @@ public class HRegion implements HeapSize { // , Writable{
         // lccValue = Bytes.toBytes(LCCIndexConstant.paddedStringString(Bytes.toString(key)));
         lccValue = key;
       } else {
-        throw new IOException("winter range generating new endkey not implemented yet");
+        throw new IOException("winter range generating new endkey not implemented yet: "
+            + Bytes.toString(qualifier));
       }
       return lccValue;
     }
@@ -4509,16 +4511,17 @@ public class HRegion implements HeapSize { // , Writable{
         }
         boolean meetLCCStopRow = mWinterIsLCCIndexStopRow(currentRow, offset, length);
         if (meetLCCStopRow) {
-          // System.out.println("mWinter Meet lcc stoprow, "
-          // + LCCIndexConstant.mWinterToPrint(current) + " for stoprow: "
-          // + Bytes.toString(lccIndexStopRow));
+          System.out.println("mWinter Meet lcc stoprow, "
+              + LCCIndexConstant.mWinterToPrint(current) + " for stoprow: " + lcStopRowStr);
           return false;
         }
-        // System.out.println("winter current value: " + LCCIndexConstant.mWinterToPrint(current));
+        System.out.println("winter current value: " + LCCIndexConstant.mWinterToPrint(current));
         KeyValue nextKv =
             populateResult(results, this.lccIndexStoreHeap, limit, currentRow, offset, length,
               metric);
         if (mWinterFilterResults(results)) {
+          System.out.println("winter discard result 0:"
+              + LCCIndexConstant.mWinterToPrint(results.get(0)));
           results.clear();
         }
         if (nextKv == KV_LIMIT) {
@@ -4561,8 +4564,6 @@ public class HRegion implements HeapSize { // , Writable{
         // Bytes.toBytes("")
         // winter here use main filter to filter the range as well!
         if (mWinterShouldDiscardRow(lccMainRowkeyRange, kv.getRow())) {
-          // System.out.println("winter discard rowkey: " + LCCIndexGenerator.mWinterToPrint(kv)
-          // + " for range:" + lccMainRowkeyRange);
           System.out.println("winter discard B, say rowkey out of range: "
               + LCCIndexConstant.mWinterToPrint(kv));
           WinterOptimizer.ThrowWhenCalled("winter discard B, say rowkey out of range: "
