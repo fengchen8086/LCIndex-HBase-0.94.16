@@ -64,6 +64,7 @@ stop_dstat(){
    rm $DSTAT_LOG -r
    mkdir -p $DSTAT_LOG
    for host in `cat ~/allnodes`;do
+      echo "cp data from "$i" to "$1
       scp -r -q hec-$host:`pwd`/tmp/* $DSTAT_LOG
    done
    mv $DSTAT_LOG $1
@@ -126,10 +127,6 @@ fun_RestartHBase(){
     echo "restart hbase done"
 }
 
-fun_ClearNonExistingLCCFile(){
-    for i in `cat ~/hbase-nodes`; do
-        ssh hec-$i "java "
-}
 
 thisFileName=""
 saveDir=`pwd`/test-results
@@ -139,6 +136,7 @@ mkdir $saveDir
 # workloadType totalRecordNum data_input_dir stat_name client_hosts_file each_client_thread_number forceflush
 
 for i in 500; do 
+#for i in 1; do 
     maxRecordNumber=$(($i * 10000))
     for tn in 30; do
 	fun_GenerateRemoteData $maxRecordNumber $tpchFilePath $generatedDataDir $statFileName $clientFile $tn $deleteIfExists
@@ -150,10 +148,10 @@ for i in 500; do
             thisFileName=$saveDir/$type-$maxRecordNumber-$tn-$nowDate
             echo "start insert "$type-$maxRecordNumber-$tn", flush to:"$thisFileName 
 	    start_dstat
-	    fun_TestRemotePut $type $maxRecordNumber $generatedDataDir $statFileName $clientFile $tn $forceflush 2>&1 > $thisFileName
-            echo "finish insert "$type-$maxRecordNumber-$tn 
+   	    fun_TestRemotePut $type $maxRecordNumber $generatedDataDir $statFileName $clientFile $tn $forceflush 2>&1 > $thisFileName
+            echo "finish insert "$type-$maxRecordNumber-$tn
             sleep 180
-	    stop_dstat $dstatGatherPath/insert-$type-$maxRecordNumber-$tn
+	    stop_dstat $dstatGatherPath/insert-$type-$maxRecordNumber-$tn-$nowDate
             thisFileName=$saveDir/scan-$type-$maxRecordNumber-$nowDate 
             echo "start scan "$type-$maxRecordNumber", flush to:"$thisFileName
 	    start_dstat

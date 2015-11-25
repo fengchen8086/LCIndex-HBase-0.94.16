@@ -1,0 +1,3 @@
+t	double	>=	25000	<=	35000
+d	LONG	>=	19980310
+p	string	==	3-MEDIUM

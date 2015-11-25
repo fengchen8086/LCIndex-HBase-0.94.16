@@ -1,0 +1,3 @@
+t	double	>=	20000	<=	45000
+d	LONG	>=	19970310
+#priority	string	==	3-MEDIUM
