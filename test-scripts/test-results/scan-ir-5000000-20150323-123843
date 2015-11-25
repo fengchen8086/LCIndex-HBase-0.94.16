@@ -1,0 +1,42 @@
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey report scan ir, total cost 278.743s to scan 390138 results, average latency is: 0.7144702643679929
+coffey report scan, run ir, have run 1 times, avg: 278.743
+coffey reporting scan each time: 
+coffey report scan round 0: 278.743
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+coffey get range: [f:date], values (19970310, MAX)
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey report scan ir, total cost 127.654s to scan 82892 results, average latency is: 1.5399917965545529
+coffey report scan, run ir, have run 1 times, avg: 127.654
+coffey reporting scan each time: 
+coffey report scan round 0: 127.654
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+coffey get range: [f:date], values (19970310, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey report scan ir, total cost 76.751s to scan 16508 results, average latency is: 4.649321541070996
+coffey report scan, run ir, have run 1 times, avg: 76.751
+coffey reporting scan each time: 
+coffey report scan round 0: 76.751
+coffey get range: [f:totalPrice], values (20000.0, 35000.0)
+coffey get range: [f:date], values (19971110, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey report scan ir, total cost 62.424s to scan 4889 results, average latency is: 12.768255266925753
+coffey report scan, run ir, have run 1 times, avg: 62.424
+coffey reporting scan each time: 
+coffey report scan round 0: 62.424
+coffey get range: [f:totalPrice], values (25000.0, 35000.0)
+coffey get range: [f:date], values (19980310, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey report scan ir, total cost 56.403s to scan 1818 results, average latency is: 31.024752475247524
+coffey report scan, run ir, have run 1 times, avg: 56.403
+coffey reporting scan each time: 
+coffey report scan round 0: 56.403

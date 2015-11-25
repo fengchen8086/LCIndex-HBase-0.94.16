@@ -1,0 +1,7 @@
+winter init Store, path: hdfs://hec-14:21345/hbase/-ROOT-, family name info, family length: 12
+winter index status of table -ROOT-, family info, irindex is: false, lccindex is: false
+winter init Store, path: hdfs://hec-14:21345/hbase/.META., family name info, family length: 12
+winter index status of table .META., family info, irindex is: false, lccindex is: false
+winter memstore flush raw cost: 0.06 seconds for raw size:2
+winter currently add Times: 1
+winter currently success remove Times: 1

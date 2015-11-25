@@ -1,0 +1,103 @@
+# this is create for plotting CPU usage according to the idle percentage
+
+set terminal postscript eps color linewidth 2 "Helvetica" 28
+set output "cpu_usage.eps"
+
+set key right top reverse Left maxrows 3 maxcols 2 font ",18" spacing 0.80 width -8 samplen 2 box
+set grid ls 3 fc rgb "gray" lt 20
+
+set xrange [0:]
+
+set yrange [0:120]
+
+set lmargin 9
+set rmargin 2
+
+set pointsize 1.2
+set linetype 1 lw 2
+
+set xlabel "Progression of Time (sec)"
+set ylabel "CPU Utilization (%)"
+plot 'had.data' u ($1):2 t "Hadoop Total Used" w lp lt 1 lc 3 pt 2, \
+'dm.data' u ($1):2 t "DataMPI Total Used" w lp lt 1 lc 1 pt 1,\
+'had.data' u ($1):3 t "Hadoop Wait IO" w lp lt 2 lc 4 pt 5 , \
+'dm.data' u ($1):3 t "DataMPI Wait IO" w lp lt 2 lc 2 pt 4
+reset
+
+# this is create for plotting total network(I/O) write 
+
+set terminal postscript eps color linewidth 2 "Helvetica" 28
+set output "net_usage.eps"
+set key right top reverse Left maxrows 3 maxcols 2 font ",18" spacing 0.80 width -4 samplen 2 box
+
+set xrange [0:]
+
+set yrange [0:120]
+set grid ls 3 fc rgb "gray" lt 20
+
+set lmargin 9
+set rmargin 2
+
+set pointsize 1
+set linetype 1 lw 2
+
+set xlabel "Progression of Time (sec)"
+set ylabel "Network Bandwidth (MB/sec)"
+
+plot 'had.data' u ($1):($11/1000) t "Hadoop Send" w lp lt 1 lc 3 pt 2 , \
+'dm.data' u ($1):($11/1000) t "DataMPI Send" w lp lt 1 lc 1 pt 1, \
+'had.data' u ($1):($10/1000) t "Hadoop Recv" w lp lt 2 lc 4 pt 5 , \
+'dm.data' u ($1):($10/1000) t "DataMPI Recv" w lp lt 2 lc 2 pt 4
+reset
+
+# this is disk write
+
+set terminal postscript eps color linewidth 2 "Helvetica" 28
+set output "dsk_io.eps"
+
+set xrange [0:]
+set yrange [0:120]
+
+set key right top reverse Left maxrows 3 maxcols 2 font ",18" spacing 0.80 width -2 samplen 2 box	
+set grid ls 3 fc rgb "gray" lt 20
+
+set lmargin 9
+set rmargin 2
+
+set pointsize 1
+set linetype 1 lw 2
+
+set xlabel "Progression of Time (sec)" #font "Helvetica,28"
+set ylabel "Disk Bandwidth (MB/sec)" #font "Helvetica,28"
+
+
+plot 'had.data' u ($1):9 t "Hadoop Wt" w lp lt 1 lc 3 pt 2, \
+'dm.data' u ($1):9 t "DataMPI Wt" w lp lt 1 lc 1 pt 1, \
+'had.data' u ($1):8 t "Hadoop Rd" w lp lt 2 lc 4 pt 5, \
+'dm.data' u ($1):8 t "DataMPI Rd" w lp lt 2 lc 2 pt 4
+reset
+
+# this is create for plotting memory usage
+
+set terminal postscript eps color linewidth 2 "Helvetica" 28
+set output "mem_usage.eps"
+set key right top reverse Left maxrows 1 maxcols 3 font ",18" spacing 1 width -1.0 samplen 1.5 box
+
+set xrange [0:]
+
+set yrange [0:20]
+
+set grid ls 3 fc rgb "gray" lt 20
+
+set lmargin 9
+set rmargin 2
+
+set pointsize 1
+set linetype 1 lw 2
+
+set xlabel "Progression of Time (sec)" #font "Helvetica,28"
+set ylabel "Memory Footprint (GB)" #font "Helvetica,28"
+
+plot 'had.data' u ($1):(15936-$7)/1000 t "Hadoop" w lp lt 1 lc 3 pt 2 , \
+'dm.data' u ($1):(15936-$7)/1000 t "DataMPI" w lp lt 1 lc 1 pt 1
+reset

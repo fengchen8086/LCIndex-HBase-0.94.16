@@ -1,0 +1,35 @@
+This script can touch down a [results_dir] into a xlsx file.
+1. Before running, you should ensure that you have installed the xlsxwriter package.
+   A recommended way to get xlsxwriter is running:
+   sudo pip install xlsxwriter
+2. run:
+   python getPerfExcel.py [results_dir]
+   !  It supports the relative path. So there's no need to copy the script.
+3. The excel file is located at the current directory named "perfs.xlsx"
+ 
+Note:
+The results_dir should like this
+results-all/
+├── results-dm
+│   ├── 40G_GREP_DM
+│   ├── 40G_KM5_DM
+│   ├── 40G_SORT_DM
+│   ├── 40G_TERA_DM
+│   ├── 40G_WC_DM
+│   ├── 80G_GREP_DM
+│   ├── 80G_KM5_DM
+│   ├── 80G_SORT_DM
+│   ├── 80G_TERA_DM
+│   └── 80G_WC_DM
+└── results-had
+    ├── 40G_GREP_HAD
+    ├── 40G_KM5_HAD
+    ├── 40G_SORT_HAD
+    ├── 40G_TERA_HAD
+    ├── 40G_WC_HAD
+    ├── 80G_GREP_HAD
+    ├── 80G_KM5_HAD
+    ├── 80G_SORT_HAD
+    ├── 80G_TERA_HAD
+    └── 80G_WC_HAD
+And each job dir should have a perf.log file.

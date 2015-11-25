@@ -1,0 +1,54 @@
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey cmindex main index range: f:totalPrice [20000.0,45000.0]
+coffey report scan cc, total cost 194.142s to scan 390138 results, average latency is: 0.4976213544950761
+coffey report scan, run cc, have run 1 times, avg: 194.142
+coffey reporting scan each time: 
+coffey report scan round 0: 194.142
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+coffey get range: [f:date], values (19970310, MAX)
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey cmindex add filter for range: f:totalPrice [20000.0,45000.0]
+coffey cmindex main index range: f:totalPrice [20000.0,45000.0]
+coffey report scan cc, total cost 55.413s to scan 82892 results, average latency is: 0.6684842928147469
+coffey report scan, run cc, have run 1 times, avg: 55.413
+coffey reporting scan each time: 
+coffey report scan round 0: 55.413
+coffey get range: [f:totalPrice], values (20000.0, 45000.0)
+coffey get range: [f:date], values (19970310, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey cmindex add filter for range: f:totalPrice [20000.0,45000.0]
+coffey cmindex add filter for range: f:totalPrice [20000.0,45000.0]
+coffey cmindex main index range: f:totalPrice [20000.0,45000.0]
+coffey report scan cc, total cost 23.142s to scan 16508 results, average latency is: 1.4018657620547614
+coffey report scan, run cc, have run 1 times, avg: 23.142
+coffey reporting scan each time: 
+coffey report scan round 0: 23.142
+coffey get range: [f:totalPrice], values (20000.0, 35000.0)
+coffey get range: [f:date], values (19971110, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey cmindex add filter for range: f:totalPrice [20000.0,35000.0]
+coffey cmindex add filter for range: f:totalPrice [20000.0,35000.0]
+coffey cmindex main index range: f:totalPrice [20000.0,35000.0]
+coffey report scan cc, total cost 10.374s to scan 4889 results, average latency is: 2.121906320310902
+coffey report scan, run cc, have run 1 times, avg: 10.374
+coffey reporting scan each time: 
+coffey report scan round 0: 10.374
+coffey get range: [f:totalPrice], values (25000.0, 35000.0)
+coffey get range: [f:date], values (19980310, MAX)
+coffey get range: [f:priority], values (3-MEDIUM <== EQUAL )
+setting line: hbase.zookeeper.quorum	hec-14,hec-02,hec-03
+coffey manually set zk hbase.zookeeper.quorum  hec-14,hec-02,hec-03
+coffey cmindex add filter for range: f:totalPrice [25000.0,35000.0]
+coffey cmindex add filter for range: f:totalPrice [25000.0,35000.0]
+coffey cmindex main index range: f:totalPrice [25000.0,35000.0]
+coffey report scan cc, total cost 5.79s to scan 1818 results, average latency is: 3.184818481848185
+coffey report scan, run cc, have run 1 times, avg: 5.79
+coffey reporting scan each time: 
+coffey report scan round 0: 5.79
